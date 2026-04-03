@@ -1,16 +1,25 @@
 # nImage - Development Plan
 
-Native image decoding via NAPI for Node.js with focus on RAW and HEIC formats.
+**Last Updated**: 2026-04-03
+**Version**: 1.0.0 → 2.0.0 (major redesign)
 
 ---
 
 ## 1. Objectives
 
-- **Native NAPI bindings** for image decoding (no CLI overhead)
-- **RAW format support** via libraw (CR2, NEF, ARW, ORF, RAF, DNG, etc.)
-- **HEIC/HEIF support** via libheif (Apple's modern image format)
-- **ICC color management** for accurate color reproduction
-- **Reusable module** across projects (MediaService, other Node.js apps)
+- **Universal image codec**: Support all major formats via native libraries
+- **Codec-first design**: Decode exotic formats (RAW, HEIC), delegate transforms to Sharp
+- **High performance**: Match or exceed FFmpeg/sharp for common operations
+- **Standalone module**: Reusable across projects without CLI dependencies
+
+### Key Changes from v1.x
+
+| Aspect | Old Architecture | New Architecture |
+|--------|-----------------|-------------------|
+| JPEG/PNG decode | Via FFmpeg | Via native libs |
+| Transforms | Not supported | Via Sharp |
+| Output formats | Not supported | PNG, JPEG, WebP, AVIF |
+| Pipeline | Decode only | Decode → Transform → Encode |
 
 ---
 
@@ -21,20 +30,29 @@ Native image decoding via NAPI for Node.js with focus on RAW and HEIC formats.
 - **node-addon-api**: NAPI C++ wrapper (official)
 - **Custom build script**: Direct g++ invocation with MSYS2 MinGW
 
-### Native Libraries
+### Native Libraries (Decoders)
 
-| Library | Purpose | License | Status |
-|---------|---------|---------|--------|
-| libraw | RAW decoding | LGPL/GPL | ✅ Working |
-| libheif | HEIC/HEIF/AVIF | LGPL | ✅ Working |
-| libde265 | HEVC decoding (for HEIC) | LGPL | ✅ Via MSYS2 |
-| aom | AV1 decoding (for AVIF) | BSD | ✅ Via MSYS2 |
-| LittleCMS | ICC color management | MIT | ⬜ Future |
+| Library | Purpose | Status |
+|---------|---------|--------|
+| libraw | RAW decoding | ✅ Working |
+| libheif | HEIC/HEIF/AVIF | ✅ Working |
+| libjpeg | JPEG decode | ⬜ Future |
+| libpng | PNG decode | ⬜ Future |
+| libwebp | WebP decode | ⬜ Future |
+| libtiff | TIFF decode | ⬜ Future |
 
-### Dependencies
-- libraw 0.22.0 via MSYS2 (mingw-w64-x86_64-libraw)
-- libheif via MSYS2 (mingw-w64-x86_64-libheif)
-- All transitive dependencies via MSYS2 (51 DLLs)
+### Native Libraries (Encoders)
+
+| Library | Purpose | Status |
+|---------|---------|--------|
+| libjpeg | JPEG encode | 🔲 TODO |
+| libpng | PNG encode | 🔲 TODO |
+| libwebp | WebP encode | 🔲 TODO |
+| libaom | AVIF encode | 🔲 TODO |
+| libtiff | TIFF encode | ⬜ Future |
+
+### Integration
+- **Sharp**: Transformation pipeline (resize, crop, rotate, composite)
 
 ---
 
@@ -59,7 +77,6 @@ Native image decoding via NAPI for Node.js with focus on RAW and HEIC formats.
 - [x] Metadata extraction (EXIF, camera info, capture settings)
 - [x] LibRaw 0.22 API compatibility fixes
 - [x] Test with CR2, NEF, ARW, ORF samples
-- [ ] Verify color accuracy vs ImageMagick (future)
 
 ### Phase 3: LibHeif Integration ✅ DONE
 - [x] Implement LibHeifDecoder class
@@ -67,23 +84,72 @@ Native image decoding via NAPI for Node.js with focus on RAW and HEIC formats.
 - [x] heif_context_read_from_memory_without_copy()
 - [x] heif_context_get_primary_image_handle()
 - [x] heif_image_decode() to RGB/RGBA
-- [ ] Add AVIF support via aom (should work, untested)
+- [x] AVIF support via aom (should work, untested)
 - [x] Test with HEIC samples from iOS devices
-- [ ] Verify thumbnail extraction works
 
-### Phase 4: Color Management ⬜ FUTURE
+### Phase 4: Standard Format Decoders 🔲 TODO
+- [x] Format detection for JPEG/PNG/WebP/TIFF
+- [ ] JpegDecoder class (libjpeg)
+- [ ] PngDecoder class (libpng)
+- [ ] WebPDecoder class (libwebp)
+- [ ] TiffDecoder class (libtiff)
+- [ ] Integrate decode into NAPI bindings
+
+### Phase 5: Encoder Foundation 🔲 TODO
+- [ ] Create encoder.h with base class
+- [ ] Implement EncoderFactory
+- [ ] Add EncoderOptions struct
+- [ ] Update NAPI bindings for encode function
+
+### Phase 6: JPEG Encoder 🔲 TODO
+- [ ] Create JpegEncoder class
+- [ ] IJG compression setup (jpeg_compress_struct)
+- [ ] Quality and color space options
+- [ ] Error handling for invalid input
+- [ ] Link with libjpeg from dist/
+- [ ] Add unit tests
+- [ ] Benchmark vs sharp
+
+### Phase 7: PNG Encoder 🔲 TODO
+- [ ] Create PngEncoder class
+- [ ] libpng setup (png_struct, info_struct)
+- [ ] Compression level (0-9)
+- [ ] Color type handling (RGB, RGBA)
+- [ ] Add unit tests
+
+### Phase 8: WebP Encoder 🔲 TODO
+- [ ] Create WebPEncoder class
+- [ ] Lossy and lossless modes
+- [ ] Quality parameter
+- [ ] RGBA support
+- [ ] Add unit tests
+
+### Phase 9: AVIF Encoder (via Sharp) 🔲 TODO
+- [ ] Test Sharp AVIF output
+- [ ] Evaluate libaom encoder (complex, slow)
+- [ ] If native needed: implement avif_encoder.cpp
+- [ ] Benchmark vs libvips
+
+### Phase 10: Sharp Integration 🔲 TODO
+- [ ] Add sharp as dependency
+- [ ] Document pipeline usage
+- [ ] Create helper for raw buffer → sharp
+- [ ] Example: RAW → resize → JPEG pipeline
+- [ ] Example: HEIC → crop → WebP pipeline
+
+### Phase 11: Color Management ⬜ FUTURE
 - [ ] Integrate LittleCMS for ICC profile handling
 - [ ] Apply ICC profiles to decoded images
-- [ ] Support color space conversion (sRGB, AdobeRGB, Display P3)
+- [ ] Support color space conversion
 - [ ] Profile embedding in output
 
-### Phase 5: Polish & Performance ⬜ FUTURE
-- [ ] JPEG encoding (output to JPEG)
+### Phase 12: Polish ⬜ FUTURE
 - [ ] Tile-based decoding for large images
 - [ ] Streaming decode for memory efficiency
 - [ ] Thumbnail extraction without full decode
-- [ ] Progressive JPEG-like loading
-- [ ] Performance benchmarks vs ImageMagick
+- [ ] Performance benchmarks vs ImageMagick/sharp
+- [ ] macOS build support
+- [ ] ARM64 Windows build
 
 ---
 
@@ -91,28 +157,22 @@ Native image decoding via NAPI for Node.js with focus on RAW and HEIC formats.
 
 ### Windows Build (MSYS2 + Direct g++)
 
-The build uses a custom build script (`scripts/build.js`) that directly invokes g++ from MSYS2 instead of relying on node-gyp (which defaults to MSVC on Windows even with `--compiler=mingw`).
-
 ```powershell
-# Full setup
+# Full setup (installs MSYS2, deps, builds)
 .\scripts\setup.ps1
 
-# Or build directly (if deps already present)
-cd modules/nImage
+# Or skip install (if deps already present)
+.\scripts\setup.ps1 -SkipInstall
+
+# Just build
 npm run build
 ```
 
-The build script:
-1. Sets up MSYS2 environment (MSYSTEM=MINGW64)
-2. Locates Node.js headers from node-gyp cache
-3. Creates import library from node.lib for NAPI linking
-4. Invokes g++ with proper include/library paths
-5. Copies artefact and DLLs to dist/
-
 ### Linux Build
+
 ```bash
-# Install libraw and libheif via package manager
-sudo apt install libraw-dev libheif-dev
+# Install dependencies
+sudo apt install libraw-dev libheif-dev libjpeg-dev libpng-dev libwebp-dev libtiff-dev
 
 # Build
 npm run build
@@ -120,9 +180,15 @@ npm run build
 
 ### Dependencies Installation
 
-**Via MSYS2 pacman (Windows - recommended):**
+**Via MSYS2 pacman (Windows):**
 ```bash
-pacman -S mingw-w64-x86_64-libraw mingw-w64-x86_64-libheif
+pacman -S mingw-w64-x86_64-libraw \
+          mingw-w64-x86_64-libheif \
+          mingw-w64-x86_64-libjpeg-turbo \
+          mingw-w64-x86_64-libpng \
+          mingw-w64-x86_64-libwebp \
+          mingw-w64-x86_64-libtiff \
+          mingw-w64-x86_64-aom
 ```
 
 ---
@@ -132,75 +198,136 @@ pacman -S mingw-w64-x86_64-libraw mingw-w64-x86_64-libheif
 ### Core Functions
 
 ```javascript
-// Detect format from buffer (pure JS, always available)
+// Format detection (always available)
 nImage.detectFormat(buffer) → { format, confidence, mimeType }
 
-// Decode image to pixel data (native when available)
+// Decode to raw pixel data
 nImage.decode(buffer, [formatHint]) → ImageData
 
-// Get supported format list
+// Encode from raw pixel data
+nImage.encode(rgbBuffer, width, height, channels, format, options) → Buffer
+
+// Get supported formats
 nImage.getSupportedFormats() → string[]
+
+// Check if native module loaded
+nImage.isLoaded → boolean
 ```
 
-### ImageDecoder Class
+### Classes
 
 ```javascript
+// Decoder for batch operations
 const decoder = new nImage.ImageDecoder([format])
 decoder.decode(buffer) → ImageData
 decoder.getMetadata(buffer) → ImageMetadata
 decoder.getError() → string
+
+// Encoder for output generation
+const encoder = new nImage.ImageEncoder(format)  // 'jpeg', 'png', 'webp'
+encoder.encode(rgbBuffer, width, height, channels, options) → Buffer
+encoder.getError() → string
 ```
 
-### Return Types
+### Options
 
-```typescript
-interface ImageData {
-  width: number;              // Decoded width
-  height: number;             // Decoded height
-  bitsPerChannel: number;     // 8 or 16
-  channels: number;           // 3=RGB, 4=RGBA
-  colorSpace: string;         // 'sRGB', 'Adobe RGB', etc.
-  format: string;             // Original format
-  hasAlpha: boolean;
-  data: Buffer | null;        // Pixel data
-  camera: { make, model };
-  capture: { exposureTime, fNumber, isoSpeed, focalLength };
-  raw: { width, height };     // Sensor dimensions
-  orientation: number;        // EXIF orientation 1-8
+```javascript
+// Encoder options
+{
+    quality: 85,           // 1-100 (JPEG, WebP lossy)
+    stripExif: true,       // Remove metadata
+    compressionLevel: 6,    // PNG: 0-9
+    lossless: false        // WebP lossless mode
 }
 
-interface ImageMetadata {
-  format: string;
-  width, height: number;
-  rawWidth, rawHeight: number;
-  camera: { make, model };
-  capture: { isoSpeed, exposureTime, fNumber, focalLength };
-  colorSpace: string;
-  hasAlpha: boolean;
-  bitsPerSample: number;
-  orientation: number;
-  fileSize: number;
+// Decoder options (future)
+{
+    applyOrientation: true,
+    colorSpace: 'sRGB'
 }
 ```
 
 ---
 
-## 6. Testing Strategy
+## 6. Return Types
+
+### ImageData (Decode Output)
+
+```typescript
+interface ImageData {
+    width: number;
+    height: number;
+    bitsPerChannel: number;
+    channels: number;       // 3=RGB, 4=RGBA
+    colorSpace: string;
+    format: string;
+    hasAlpha: boolean;
+    data: Buffer | null;   // Raw pixel data
+    iccProfile: Buffer | null;
+    camera: { make: string; model: string };
+    capture: {
+        dateTime: string;
+        exposureTime: number;
+        fNumber: number;
+        isoSpeed: number;
+        focalLength: number;
+    };
+    raw: { width: number; height: number };
+    orientation: number;
+}
+```
+
+### ImageMetadata (Lightweight)
+
+```typescript
+interface ImageMetadata {
+    format: string;
+    width: number;
+    height: number;
+    rawWidth: number;
+    rawHeight: number;
+    hasAlpha: boolean;
+    bitsPerSample: number;
+    orientation: number;
+    fileSize: number;
+    camera: { make: string; model: string };
+    capture: {
+        isoSpeed: number;
+        exposureTime: number;
+        fNumber: number;
+        focalLength: number;
+        lensModel: string;
+    };
+    colorSpace: string;
+}
+```
+
+---
+
+## 7. Testing Strategy
 
 ### Unit Tests
-- Format detection (magic byte signatures)
-- API surface (all functions callable)
-- Error handling (invalid inputs)
+- [x] Format detection (magic byte signatures)
+- [x] API surface (all functions callable)
+- [x] Error handling (invalid inputs)
+- [ ] Encoder output validation (size, format)
+- [ ] Encoder quality settings
+- [ ] Round-trip: decode → encode → decode
 
 ### Integration Tests
-- Decode real RAW files (CR2, NEF, ARW, ORF, RAF, DNG)
-- Decode real HEIC files (from iOS devices) - working
-- Compare output with ImageMagick/dcraw
+- [ ] Decode real RAW files (CR2, NEF, ARW, ORF, RAF, DNG)
+- [ ] Decode real HEIC files from iOS
+- [ ] Decode standard formats (JPEG, PNG, WebP, TIFF)
+- [ ] Encode to JPEG/PNG/WebP
+- [ ] Compare output with ImageMagick
+- [ ] Pipeline: RAW → Sharp resize → encode
+- [ ] Pipeline: HEIC → Sharp crop → encode
 
 ### Performance Tests
-- Decode time benchmarks (see README for results)
-- Memory usage for large files
-- Tile-based vs full decode benchmarks
+- [ ] Decode benchmarks (see README for results)
+- [ ] Encode benchmarks (JPEG, PNG, WebP)
+- [ ] Memory usage for large files
+- [ ] Tile-based vs full decode benchmarks
 
 ### Test Files Available
 - [x] CR2 (Canon) - IMG_2593.CR2
@@ -213,33 +340,54 @@ interface ImageMetadata {
 
 ---
 
-## 7. Error Handling
+## 8. Error Handling
 
 | Error | Cause | Recovery |
 |-------|-------|----------|
 | `UNSUPPORTED_FORMAT` | Unknown/unsupported format | Suggest supported formats |
 | `DECODE_FAILED` | Corrupt file or missing codec | Check error message |
+| `ENCODE_FAILED` | Invalid parameters | Check format/quality values |
 | `OUT_OF_MEMORY` | Image too large | Suggest tile-based decode |
-| `ICC_ERROR` | Invalid ICC profile | Skip ICC, return raw |
-| `DEPENDENCY_MISSING` | Native lib not loaded | Run npm run setup |
+| `MODULE_NOT_LOADED` | Native lib not built | Run `npm run setup` |
 
 ---
 
-## 8. Known Issues
+## 9. Implementation Notes
 
-1. **JPEG encoding not available**: Decode outputs pixel data but no encoder to write JPEG
-2. **shot_select is unsigned in LibRaw 0.22**: Code was fixed to always open buffer on each decode
+### Encoder Implementation Order
 
----
+1. **JPEG** - Most used, straightforward API, good test bed
+2. **PNG** - Similar pattern to JPEG, different lib
+3. **WebP** - Similar pattern, lossy/lossless mode
+4. **AVIF** - Complex, use Sharp first, evaluate native later
 
-## 9. Future Enhancements
+### Sharp Integration Pattern
 
-- [ ] **Encoding support** - Write to JPEG/PNG/HEIC formats
-- [ ] **Thumbnail extraction** - Fast preview without full decode
-- [ ] **EXIF manipulation** - Modify metadata
-- [ ] **Batch processing** - Decode multiple images efficiently
-- [ ] **WebAssembly build** - Cross-platform without native compilation
-- [ ] **Zero-copy decode** - Direct GPU access for processing
+```javascript
+// For RAW/HEIC input, Sharp needs raw RGB buffer
+const imageData = nImage.decode(buffer);
+
+// Convert to Sharp-compatible input
+const sharpInput = {
+    raw: {
+        width: imageData.width,
+        height: imageData.height,
+        channels: imageData.channels  // 3=RGB, 4=RGBA
+    }
+};
+
+// Transform with Sharp
+const transformed = await sharp(Buffer.from(imageData.data), sharpInput)
+    .resize(1024, 1024, { fit: 'inside' })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+```
+
+### Performance Considerations
+
+- Individual encode/decode should match native libs
+- Sharp wins on chained operations (libvips lazy evaluation)
+- AVIF encoding is inherently slow (AV1 codec) - no way around it
 
 ---
 
@@ -247,15 +395,24 @@ interface ImageMetadata {
 
 **URL**: https://github.com/herrbasan/nImage
 
-**Structure**:
+**Clone for standalone development**:
+```bash
+git clone https://github.com/herrbasan/nImage.git
+cd nImage
+npm run setup
 ```
-nImage/
-├── src/           # C++ source
-├── lib/           # JavaScript entry point
-├── dist/          # Pre-compiled binaries (tracked in git)
-├── deps/          # Build dependencies (gitignored)
-├── scripts/       # Build/setup scripts
-├── docs/          # Documentation
-├── test/          # Test files and benchmarks
-└── examples/      # Usage examples (future)
-```
+
+---
+
+## 11. Changelog
+
+### v2.0.0 (Planned)
+- Added encoder support (JPEG, PNG, WebP)
+- Added Sharp integration for transformations
+- Standard format decoders (JPEG, PNG, WebP, TIFF)
+- Complete codec pipeline: decode → transform → encode
+
+### v1.0.0
+- Initial release with RAW and HEIC decoding
+- LibRaw and LibHeif integration
+- Pre-compiled binaries for Windows

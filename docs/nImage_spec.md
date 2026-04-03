@@ -4,7 +4,32 @@
 
 ## Overview
 
-nImage is a native Node.js module (NAPI) for high-performance image decoding. It provides in-process access to native image libraries without CLI spawn overhead.
+nImage is a native Node.js module (NAPI) for high-performance image processing. It provides:
+- **Decode**: RAW (CR2, NEF, ARW, ORF, RAF, DNG), HEIC/HEIF, and standard formats
+- **Transform**: Via Sharp (resize, crop, rotate, composite)
+- **Encode**: JPEG, PNG, WebP, AVIF output
+
+## Design Philosophy
+
+nImage is a **codec-first** module. It handles the native library complexity for exotic formats, then delegates transformation work to Sharp which is already optimized for common operations.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         nImage Module                            │
+│                                                                  │
+│  Input              Decode           Transform        Encode      │
+│  ──────            ──────           ─────────        ─────       │
+│  RAW ─────────────► RGB/RGBA ──────► Sharp ◄──────── PNG        │
+│  HEIC ────────────►              ──►        ───────► JPEG       │
+│  HEIF                                              ──► WebP      │
+│  JPEG ◄──────────────────────────────────────────────► AVIF      │
+│  PNG                                                 (via Sharp) │
+│  WebP                                                (via Sharp) │
+│  TIFF                                               (via Sharp) │
+└─────────────────────────────────────────────────────────────────┘
+
+Legend: ──► native    ──► Sharp (libvips)
+```
 
 ## Module Structure
 
@@ -13,6 +38,9 @@ nImage/
 ├── src/
 │   ├── decoder.h           # Base decoder class and structures
 │   ├── decoder.cpp         # Decoder implementations (LibRaw, LibHeif)
+│   ├── encoder.h           # Base encoder class and structures
+│   ├── encoder.cpp         # Encoder implementations (JPEG, PNG, WebP)
+│   ├── avif_encoder.cpp    # AVIF encoder (via libaom)
 │   └── binding.cpp         # NAPI bindings
 ├── lib/
 │   └── index.js           # JavaScript entry point
@@ -20,210 +48,300 @@ nImage/
 │   ├── nimage.node       # Native module
 │   └── *.dll             # Runtime DLLs
 ├── deps/                  # External dependencies (gitignored)
-│   ├── include/          # Header files
-│   ├── lib/              # Import libraries
-│   └── bin/              # DLLs
 ├── scripts/
 │   ├── setup.ps1         # Full setup script
 │   └── build.js          # Custom build script (direct g++)
 ├── test/
 │   ├── index.test.js     # Unit tests
 │   ├── benchmark.js      # Performance benchmarks
-│   └── convert-to-jpeg.js # Conversion tool
+│   └── assets/          # Test images
+├── docs/                 # Documentation
 └── package.json
 ```
 
-## Class Hierarchy
+## Supported Formats
 
-### ImageDecoder (Base Class)
+### Input Formats (Decoding)
 
-Abstract base class for all image decoders.
+| Format | Library | Status | Output |
+|--------|---------|--------|--------|
+| Canon CR2/CRW | libraw | ✅ Working | RGB |
+| Nikon NEF | libraw | ✅ Working | RGB |
+| Sony ARW | libraw | ✅ Working | RGB |
+| Olympus ORF | libraw | ✅ Working | RGB |
+| Fujifilm RAF | libraw | ✅ Working | RGB |
+| Panasonic RW2 | libraw | ✅ Working | RGB |
+| Adobe DNG | libraw | ✅ Working | RGB |
+| Pentax PEF | libraw | ✅ Working | RGB |
+| Samsung SRW | libraw | ✅ Working | RGB |
+| Leica RWL | libraw | ✅ Working | RGB |
+| HEIC | libheif | ✅ Working | RGB/RGBA |
+| HEIF | libheif | ✅ Working | RGB/RGBA |
+| AVIF | libheif+aom | ✅ Working | RGB/RGBA |
+| JPEG | libjpeg | ⬜ Future | RGB |
+| PNG | libpng | ⬜ Future | RGB/RGBA |
+| WebP | libwebp | ⬜ Future | RGB/RGBA |
+| TIFF | libtiff | ⬜ Future | RGB/RGBA |
 
-```cpp
-class ImageDecoder {
-    virtual bool decode(const uint8_t* buffer, size_t size, ImageData& output) = 0;
-    virtual bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) = 0;
-    virtual bool supportsFormat(ImageFormat format) const = 0;
-    virtual const char* formatName() const = 0;
-};
-```
+### Output Formats (Encoding)
 
-### LibRawDecoder ✅ IMPLEMENTED
-
-Handles RAW formats (CR2, NEF, ARW, ORF, RAF, DNG, etc.)
-
-Uses libraw 0.22.0 library for:
-- RAW file parsing via open_buffer()
-- Unpacking via unpack()
-- Demosaicing via dcraw_process()
-- Pixel extraction via dcraw_make_mem_image()
-- Metadata extraction (camera info, EXIF)
-
-### LibHeifDecoder ⏳ NOT IMPLEMENTED
-
-Handles HEIC/HEIF formats. Stub exists but decode() returns error.
-
-Uses libheif library for:
-- HEIF/HEIC file parsing
-- Image decoding
-- Thumbnail extraction
-- Metadata extraction
+| Format | Library | Status | Notes |
+|--------|---------|--------|-------|
+| JPEG | libjpeg | 🔲 TODO | Baseline encoding |
+| PNG | libpng | 🔲 TODO | With compression levels |
+| WebP | libwebp | 🔲 TODO | Lossy/Lossless |
+| AVIF | libaom | 🔲 TODO | Via Sharp initially |
 
 ## Data Structures
 
-### ImageData
-
-Output structure returned from decode operations.
+### ImageData (Decoder Output)
 
 ```cpp
 struct ImageData {
-    std::vector<uint8_t> data;      // Pixel data (RGB)
-    int width, height;              // Dimensions
-    int bitsPerChannel;             // Bit depth (8)
-    int channels;                   // 3=RGB
-    std::string colorSpace;         // Color space name
-    std::string format;              // Original format
-    std::string cameraMake, cameraModel;
-    double exposureTime, fNumber;
-    int isoSpeed;
-    double focalLength;
+    std::vector<uint8_t> data;      // Pixel data (RGB or RGBA)
+    int width = 0;                  // Image width
+    int height = 0;                 // Image height
+    int bitsPerChannel = 8;         // Bit depth per channel
+    int channels = 3;              // 3=RGB, 4=RGBA
+    std::string colorSpace;        // "sRGB", "Adobe RGB", etc.
+    std::vector<uint8_t> iccProfile; // ICC profile data
+    std::string format;            // Original format (e.g., "cr2", "heic")
+    bool hasAlpha = false;
+    // Camera metadata
+    std::string cameraMake;
+    std::string cameraModel;
+    // Capture settings
     std::string dateTime;
-    int orientation;
-    bool hasAlpha;
+    double exposureTime = 0.0;
+    double fNumber = 0.0;
+    int isoSpeed = 0;
+    double focalLength = 0.0;
+    // RAW dimensions
+    int rawWidth = 0;
+    int rawHeight = 0;
+    // Orientation (EXIF 1-8)
+    int orientation = 1;
 };
 ```
 
-### ImageMetadata
-
-Lightweight metadata without full decode.
+### ImageMetadata (Lightweight)
 
 ```cpp
 struct ImageMetadata {
     std::string format;
-    int width, height;
-    int rawWidth, rawHeight;
-    std::string cameraMake, cameraModel;
-    int isoSpeed;
-    double exposureTime, fNumber, focalLength;
+    int width = 0;
+    int height = 0;
+    int rawWidth = 0;
+    int rawHeight = 0;
+    std::string cameraMake;
+    std::string cameraModel;
+    int isoSpeed = 0;
+    double exposureTime = 0.0;
+    double fNumber = 0.0;
+    double focalLength = 0.0;
     std::string colorSpace;
-    bool hasAlpha;
-    int bitsPerSample;
-    int orientation;
-    size_t fileSize;
+    bool hasAlpha = false;
+    int bitsPerSample = 0;
+    int orientation = 1;
+    size_t fileSize = 0;
+    std::string lensModel;
 };
 ```
 
-## NAPI Bindings
-
-### ImageDecoderWrapper
-
-NAPI ObjectWrap class that exposes ImageDecoder to JavaScript.
+### EncoderOptions
 
 ```cpp
-class ImageDecoderWrapper : public Napi::ObjectWrap<ImageDecoderWrapper> {
-    static Napi::Object Init(Napi::Env env, Napi::Object exports);
-
-    Napi::Value Decode(const Napi::CallbackInfo& info);
-    Napi::Value GetMetadata(const Napi::CallbackInfo& info);
-    Napi::Value GetError(const Napi::CallbackInfo& info);
+struct EncoderOptions {
+    int quality = 85;              // 1-100 for lossy formats
+    bool stripExif = true;         // Remove metadata
+    int compressionLevel = 6;      // PNG: 0-9, TIFF: 1-8
+    bool lossless = false;         // WebP lossless mode
 };
 ```
 
-### Exported Functions
+## NAPI API
+
+### JavaScript API
 
 ```javascript
-exports.detectFormat(buffer)     // Detect format from buffer
-exports.getSupportedFormats()    // Get list of supported formats
-exports.decode(buffer, [hint])  // Decode image directly
-exports.ImageDecoder            // Class for batch decoding
+const nImage = require('nimage');
+
+// Detection (always available - pure JS)
+nImage.detectFormat(buffer) → { format, confidence, mimeType }
+
+// Decoding
+nImage.decode(buffer, [formatHint]) → ImageData
+decoder.decode(buffer) → ImageData
+
+// Encoding
+nImage.encode(rgbBuffer, width, height, channels, format, options) → Buffer
+encoder.encode(rgbBuffer, width, height, channels, options) → Buffer
+
+// ImageDecoder class
+const decoder = new nImage.ImageDecoder([format])
+decoder.decode(buffer) → ImageData
+decoder.getMetadata(buffer) → ImageMetadata
+
+// ImageEncoder class
+const encoder = new nImage.ImageEncoder('jpeg')
+encoder.encode(rgbBuffer, width, height, channels, options) → Buffer
 ```
 
-## JavaScript API Layer
+### Usage Example
 
-`lib/index.js` provides:
+```javascript
+const nImage = require('nimage');
+const sharp = require('sharp');
 
-1. **Native module loading** - Tries `dist/` then `build/Release/`
-2. **Fallback API** - Graceful degradation when native module unavailable
-3. **Format detection** - Pure JS implementation for common formats
-4. **Error handling** - Helpful messages for setup issues
+// Process a RAW file
+const rawBuffer = fs.readFileSync('photo.cr2');
+const imageData = nImage.decode(rawBuffer);
 
-## Build Process
+// Transform with Sharp
+const transformed = await sharp(Buffer.from(imageData.data), {
+    raw: {
+        width: imageData.width,
+        height: imageData.height,
+        channels: imageData.channels
+    }
+})
+.resize(1024, 1024, { fit: 'inside' })
+.jpeg({ quality: 85 })
+.toBuffer();
 
-### Windows Build (Custom g++ Approach)
+// Or use nImage encoder directly
+const jpegBuffer = nImage.encode(
+    imageData.data,
+    imageData.width,
+    imageData.height,
+    imageData.channels,
+    'jpeg',
+    { quality: 85 }
+);
+```
 
-The build uses a custom script that bypasses node-gyp on Windows because node-gyp defaults to MSVC even with `--compiler=mingw`.
+## Pipeline Integration
 
-1. `npm run build` - Invokes `scripts/build.js`
-2. `build.js`:
-   - Sets up MSYS2 environment (MSYSTEM=MINGW64)
-   - Finds Node.js headers from node-gyp cache
-   - Creates NAPI import library from node.lib using dlltool
-   - Invokes g++ with proper include/library paths
-   - Copies artefact and DLLs to dist/
+### MediaService Pipeline
 
-### Key Build Files
+```
+HTTP Request
+    │
+    ▼
+┌─────────────────┐
+│ Format Detection │ (nImage.detectFormat)
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    │ RAW/HEIC?│
+    └────┬────┘
+    Yes  │  No
+    │    │
+    ▼    │
+┌──────────────┐    ┌─────────────────┐
+│ nImage.decode│    │ Sharp (direct)  │
+└────┬─────────┘    └────────┬────────┘
+     │                       │
+     ▼                       ▼
+┌─────────────┐        ┌─────────────┐
+│ Raw RGB     │        │ Sharp handles│
+│ Buffer      │        │ everything   │
+└────┬────────┘        └──────┬──────┘
+     │                        │
+     ▼                        │
+┌─────────────────┐            │
+│ Sharp.transform │◄───────────┤
+│ (resize, crop)  │            │
+└────────┬────────┘            │
+         │                    │
+         ▼                    │
+┌─────────────────┐            │
+│ nImage.encode   │◄───────────┘
+│ or Sharp.encode │
+└────────┬────────┘
+         │
+         ▼
+    Output Buffer
+```
 
-- `binding.gyp` - Original node-gyp config (used for reference)
-- `scripts/build.js` - Custom build script (active)
-- `scripts/setup.ps1` - Full setup including deps
+## Performance Targets
+
+| Operation | Target | Sharp Comparison |
+|-----------|--------|-----------------|
+| Format detection | < 1 µs | Equivalent |
+| RAW decode (20MP) | < 600ms | FFmpeg: ~800ms |
+| HEIC decode (12MP) | < 150ms | FFmpeg: ~400ms |
+| JPEG encode | < 100ms | Equivalent |
+| PNG encode | < 150ms | Equivalent |
 
 ## Dependencies
 
-### libraw (✅ Working)
+### Build Dependencies
 
-- **Version**: 0.22.0 (via MSYS2)
-- **Package**: mingw-w64-x86_64-libraw
-- **Website**: https://www.libraw.org/
-- **License**: LGPL/GPL
-- **Purpose**: RAW image decoding
+| Library | Package | Purpose |
+|---------|---------|---------|
+| libraw 0.22 | mingw-w64-x86_64-libraw | RAW decoding |
+| libheif 1.21 | mingw-w64-x86_64-libheif | HEIC/HEIF decoding |
+| libjpeg | mingw-w64-x86_64-libjpeg | JPEG encode/decode |
+| libpng | mingw-w64-x86_64-libpng | PNG encode/decode |
+| libwebp | mingw-w64-x86_64-libwebp | WebP encode/decode |
+| libtiff | mingw-w64-x86_64-libtiff | TIFF encode/decode |
+| libaom | mingw-w64-x86_64-aom | AV1/AVIF encode |
+| aom | (from libheif dep) | AVIF decode |
 
-### libheif (⏳ Not Implemented)
-
-- **Version**: 1.21.2 (via MSYS2)
-- **Package**: mingw-w64-x86_64-libheif
-- **Website**: https://github.com/strukturag/libheif
-- **License**: LGPL
-- **Purpose**: HEIC/HEIF/AVIF decoding
-- **Dependencies**: libde265 (HEVC), aom (AV1), x265, libpng, libjpeg
-
-## LibRaw 0.22 API Notes
-
-The code was updated for LibRaw 0.22 API compatibility:
-
-| Old API | New API |
-|---------|---------|
-| `raw->close()` | Removed (use only `recycle()`) |
-| `raw->unpack2()` | Removed (not in 0.22) |
-| `raw->dcraw_free_mem_image()` | `LibRaw::dcraw_clear_mem()` (static) |
-| `sizes.output_width/height` | `sizes.width/height` |
-| `params.shot_select` | `rawparams.shot_select` (unsigned) |
-| `lens.lensmodel` | `lens.makernotes.Lens` |
-| `other.datetime` | `other.timestamp` (time_t) + strftime |
-
-## Performance Characteristics
-
-1. **Format detection**: O(1) - only reads first 12 bytes for magic detection
-2. **Memory allocation**: ImageData uses std::vector for dynamic pixel buffers
-3. **Buffer copies**: NAPI Buffer::Copy used to avoid memory leaks
-4. **Metadata extraction**: Can be done without full demosaicing
-5. **Decode time**: Proportional to image size and camera model
-
-### Benchmark Results
+### Runtime Dependencies (in dist/)
 
 ```
-Format Detection: ~0.5-0.6 µs per call (1.7-2M ops/sec)
-  - Same speed regardless of buffer size (12 bytes to 6MB)
-
-RAW Decode:
-  - Olympus ORF (9MB): 3720x2800 → ~400ms
-  - Canon CR2 (22MB): 5208x3476 → ~520ms
+dist/
+├── nimage.node              # Main module
+├── libraw-24.dll           # RAW decoding
+├── libheif.dll             # HEIC/HEIF decoding
+├── libjpeg-8.dll           # JPEG codec
+├── libpng16-16.dll         # PNG codec
+├── libwebp-7.dll           # WebP codec
+├── libtiff-6.dll           # TIFF codec
+├── libaom.dll              # AV1 codec
+├── libsvtav1enc-4.dll      # AV1 encoder
+├── libde265-0.dll          # HEVC decoder
+├── lcms2-2.dll             # Color management
+└── ... (50+ other DLLs)
 ```
+
+## Build System
+
+### Windows (MSYS2 + MinGW g++)
+
+```powershell
+# Full setup
+.\scripts\setup.ps1
+
+# Build
+npm run build
+```
+
+### Linux
+
+```bash
+sudo apt install libraw-dev libheif-dev libjpeg-dev libpng-dev libwebp-dev libtiff-dev
+npm run build
+```
+
+## Error Handling
+
+| Error Code | Cause | Recovery |
+|------------|-------|----------|
+| `UNSUPPORTED_FORMAT` | Unknown format | Use `detectFormat` to check |
+| `DECODE_FAILED` | Corrupt file / missing codec | Check error message |
+| `ENCODE_FAILED` | Invalid parameters | Check format/quality values |
+| `OUT_OF_MEMORY` | Image too large | Use tile-based processing |
+| `MODULE_NOT_LOADED` | Build missing | Run `npm run setup` |
 
 ## Future Enhancements
 
-- [ ] Full libheif integration with HEIC/HEIF/AVIF support
-- [ ] JPEG encoding (output to JPEG files)
-- [ ] ICC color profile application
-- [ ] Tile-based decoding for large images
-- [ ] Streaming decode support
-- [ ] Write support (encode to RAW/HEIC)
+- [ ] LittleCMS integration for ICC color management
+- [ ] Tile-based decoding for memory efficiency
+- [ ] Streaming decode/encode for large files
+- [ ] Thumbnail extraction without full decode
+- [ ] EXIF manipulation
+- [ ] Multi-page TIFF support
+- [ ] GIF encoding

@@ -1,11 +1,11 @@
 # nImage
 
-Native image decoding via NAPI for Node.js.
+Native image codec for Node.js via NAPI — decode, transform, and encode images.
 
-High-performance image decoding using native libraries:
+**High-performance image processing using native libraries:**
 - **libraw**: RAW formats (CR2, NEF, ARW, ORF, RAF, DNG, etc.)
-- **libheif**: HEIC/HEIF formats (Apple's modern image format) - ✅ Working
-- **ICC color profile support** (via LittleCMS) - *future*
+- **libheif**: HEIC/HEIF formats (Apple's modern image format)
+- **Sharp**: Transformations (resize, crop, rotate) and output encoding
 
 ## Status
 
@@ -16,7 +16,10 @@ High-performance image decoding using native libraries:
 | Format Detection | ✅ Complete |
 | LibRawDecoder (RAW) | ✅ Working |
 | LibHeifDecoder (HEIC) | ✅ Working |
-| ICC Color Management | ⬜ Future |
+| JpegEncoder | 🔲 TODO |
+| PngEncoder | 🔲 TODO |
+| WebPEncoder | 🔲 TODO |
+| Sharp Integration | 🔲 TODO |
 | Pre-compiled Binaries | ✅ In dist/ |
 
 ### Benchmark Results
@@ -30,39 +33,67 @@ HEIC Decode (1.9MB): 2316x3088 in <100ms
 
 ## Why nImage?
 
-Traditional image decoding in Node.js relies on:
-- **ImageMagick CLI**: Slow (process spawn overhead), heavyweight
-- **Sharp**: Limited format support (no RAW, limited HEIC without FFmpeg)
-- **ffmpeg for images**: Overkill for simple image decode
+**Traditional approaches have weaknesses:**
+- **ImageMagick CLI**: Slow (process spawn overhead), heavyweight, security issues
+- **Sharp alone**: Can't decode RAW, limited HEIC support
+- **FFmpeg for images**: Overkill for simple operations
 
-nImage provides:
+**nImage provides:**
 - In-process native decoding (no CLI spawn overhead)
-- Direct memory access for pixel data
-- Native ICC color management (future)
-- Support for professional RAW formats
-- Modern Apple HEIC/HEIF support (future)
+- RAW and HEIC support that FFmpeg/sharp can't match
+- Sharp integration for high-performance transformations
+- Native encoders for JPEG, PNG, WebP output
+- Single module for the complete image pipeline
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         nImage Module                            │
+│                                                                  │
+│  Input              Decode           Transform        Encode      │
+│  ──────            ──────           ─────────        ─────       │
+│  RAW ─────────────► RGB/RGBA ──────► Sharp ◄─────── PNG        │
+│  HEIC ────────────►              ──►        ───────► JPEG       │
+│  JPEG ◄─────────────────────────────────────────────► WebP     │
+│  PNG                                                ──► AVIF     │
+└─────────────────────────────────────────────────────────────────┘
+
+Legend: ──► native    ──► Sharp (libvips)
+```
 
 ## Supported Formats
 
-### RAW Formats (via libraw) - ✅ WORKING
-- Canon: CR2, CRW
-- Nikon: NEF
-- Sony: ARW
-- Olympus: ORF
-- Fujifilm: RAF
-- Panasonic: RW2
-- Adobe: DNG
-- Pentax: PEF
-- Samsung: SRW
-- Leica: RWL
+### Input Formats (Decoding)
 
-### HEIC/HEIF (via libheif) - ⏳ PENDING
-- HEIC (High Efficiency Image Format)
-- HEIF (High Efficiency Image Format)
-- AVIF (AV1 Image Format)
+| Format | Library | Status |
+|--------|---------|--------|
+| Canon CR2/CRW | libraw | ✅ Working |
+| Nikon NEF | libraw | ✅ Working |
+| Sony ARW | libraw | ✅ Working |
+| Olympus ORF | libraw | ✅ Working |
+| Fujifilm RAF | libraw | ✅ Working |
+| Panasonic RW2 | libraw | ✅ Working |
+| Adobe DNG | libraw | ✅ Working |
+| Pentax PEF | libraw | ✅ Working |
+| Samsung SRW | libraw | ✅ Working |
+| Leica RWL | libraw | ✅ Working |
+| HEIC | libheif | ✅ Working |
+| HEIF | libheif | ✅ Working |
+| AVIF | libheif+aom | ✅ Working |
+| JPEG | libjpeg | 🔲 TODO |
+| PNG | libpng | 🔲 TODO |
+| WebP | libwebp | 🔲 TODO |
+| TIFF | libtiff | 🔲 TODO |
 
-### Standard Formats
-- JPEG, PNG, WebP, TIFF, GIF (via format detection, decoding via external libraries)
+### Output Formats (Encoding)
+
+| Format | Library | Status |
+|--------|---------|--------|
+| JPEG | libjpeg | 🔲 TODO |
+| PNG | libpng | 🔲 TODO |
+| WebP | libwebp | 🔲 TODO |
+| AVIF | Sharp/libaom | 🔲 TODO |
 
 ## Installation
 
@@ -72,7 +103,6 @@ The module ships with pre-compiled binaries in `dist/`:
 - `nimage.node` - Native module
 - 51 runtime DLLs (libraw, libheif, and dependencies)
 
-Simply require the module:
 ```javascript
 const nImage = require('nimage');
 ```
@@ -83,31 +113,20 @@ const nImage = require('nimage');
 
 ```powershell
 # Run as Administrator in PowerShell
-cd modules/nImage
+cd nImage
 .\scripts\setup.ps1
 ```
 
 This script will:
 1. Download and install MSYS2 (if not present)
-2. Install libraw and libheif packages via pacman
-3. Copy dependencies to `deps/`
-4. Build the native module using MinGW g++
-5. Run tests
-
-#### If MSYS2 Already Installed
-
-```powershell
-.\scripts\setup.ps1 -SkipInstall
-```
+2. Install libraw, libheif, and encoder libraries via pacman
+3. Build the native module using MinGW g++
+4. Run tests
 
 #### Linux
 
 ```bash
-sudo apt install libraw-dev libheif-dev
-mkdir -p deps/include deps/lib deps/bin
-cp /usr/include/*.h deps/include/ 2>/dev/null || true
-cp /usr/lib/x86_64-linux-gnu/libraw* deps/lib/
-cp /usr/lib/x86_64-linux-gnu/libheif* deps/lib/
+sudo apt install libraw-dev libheif-dev libjpeg-dev libpng-dev libwebp-dev
 npm run build
 ```
 
@@ -125,9 +144,16 @@ npm run build
 
 ## API
 
-### `nImage.decode(buffer, [formatHint])`
+### Detection (always available)
 
-Decode an image buffer directly.
+```javascript
+const result = nImage.detectFormat(buffer);
+console.log(result.format);     // 'heic'
+console.log(result.confidence); // 0.95
+console.log(result.mimeType);  // 'image/heic'
+```
+
+### Decoding
 
 ```javascript
 const nImage = require('nimage');
@@ -136,141 +162,142 @@ const imageBuffer = fs.readFileSync('image.cr2');
 const result = nImage.decode(imageBuffer);
 
 console.log(result.width, result.height);  // 6000, 4000
-console.log(result.format);                // 'cr2'
-console.log(result.colorSpace);            // 'sRGB'
-console.log(result.data);                  // Buffer with RGB pixel data
+console.log(result.format);               // 'cr2'
+console.log(result.channels);            // 3 (RGB)
+console.log(result.data);               // Buffer with raw RGB pixel data
 ```
 
-### `nImage.detectFormat(buffer)`
-
-Detect image format without full decode.
+### Encoding (TODO)
 
 ```javascript
-const result = nImage.detectFormat(buffer);
-console.log(result.format);     // 'heic'
-console.log(result.confidence);  // 0.95
-console.log(result.mimeType);    // 'image/heic'
+const jpegBuffer = nImage.encode(
+    rgbBuffer,      // Raw RGB/RGBA pixel data
+    width,          // Image width
+    height,         // Image height
+    channels,       // 3=RGB, 4=RGBA
+    'jpeg',         // Output format
+    { quality: 85 } // Options
+);
 ```
 
-### `nImage.getSupportedFormats()`
-
-Returns array of supported format names.
+### Sharp Pipeline (TODO)
 
 ```javascript
-const formats = nImage.getSupportedFormats();
-// ['cr2', 'nef', 'arw', 'heic', 'jpeg', ...]
+const nImage = require('nimage');
+const sharp = require('sharp');
+
+// Decode RAW to raw RGB
+const imageData = nImage.decode(fs.readFileSync('photo.cr2'));
+
+// Transform with Sharp
+const transformed = await sharp(Buffer.from(imageData.data), {
+    raw: {
+        width: imageData.width,
+        height: imageData.height,
+        channels: imageData.channels
+    }
+})
+.resize(1024, 1024, { fit: 'inside' })
+.jpeg({ quality: 85 })
+.toBuffer();
 ```
 
-### `nImage.ImageDecoder`
-
-Class-based API for multiple operations.
+### Classes
 
 ```javascript
+// Decoder for batch operations
 const decoder = new nImage.ImageDecoder('cr2');
 const result = decoder.decode(imageBuffer);
-console.log(result.width, result.height);
-```
 
-### `nImage.isLoaded`
-
-Check if native module is loaded.
-
-```javascript
-if (nImage.isLoaded) {
-  // Native decoding available
-} else {
-  // Only JS fallback available (format detection works)
-}
+// Encoder for output (TODO)
+const encoder = new nImage.ImageEncoder('jpeg');
+const jpegBuffer = encoder.encode(rgbBuffer, width, height, channels, options);
 ```
 
 ## Return Value
 
-`nImage.decode()` returns an object:
+`nImage.decode()` returns:
 
 ```typescript
 {
-  width: number;              // Decoded image width
-  height: number;              // Decoded image height
-  bitsPerChannel: number;      // Bits per channel (8 or 16)
-  channels: number;           // 3=RGB, 4=RGBA
-  colorSpace: string;         // 'sRGB', 'Adobe RGB', etc.
-  format: string;             // Original format
-  hasAlpha: boolean;          // Alpha channel present
-  data: Buffer | null;         // Pixel data (RGB/RGBA)
-  camera: {
-    make: string;             // Camera manufacturer
-    model: string;            // Camera model
-  };
-  capture: {
-    exposureTime: number;     // Seconds
-    fNumber: number;          // Aperture
-    isoSpeed: number;
-    focalLength: number;      // mm
-  };
-  raw: {
-    width: number;           // Sensor width
-    height: number;          // Sensor height
-  };
-  orientation: number;        // EXIF orientation (1-8)
+    width: number;
+    height: number;
+    bitsPerChannel: number;      // 8 or 16
+    channels: number;            // 3=RGB, 4=RGBA
+    colorSpace: string;          // 'sRGB', etc.
+    format: string;              // 'cr2', 'heic', etc.
+    hasAlpha: boolean;
+    data: Buffer | null;        // Raw pixel data
+    iccProfile: Buffer | null;
+    camera: { make, model };
+    capture: { dateTime, exposureTime, fNumber, isoSpeed, focalLength };
+    raw: { width, height };
+    orientation: number;         // EXIF 1-8
 }
-```
-
-## Error Handling
-
-```javascript
-const nImage = require('nimage');
-
-try {
-  const result = nImage.decode(buffer);
-  // Success
-} catch (err) {
-  if (!nImage.isLoaded) {
-    console.error('Native module not built - run npm run build');
-  } else {
-    console.error('Decode failed:', err.message);
-  }
-}
-```
-
-## Module Structure
-
-```
-modules/nImage/
-├── src/
-│   ├── decoder.h       # Base decoder class and structures
-│   ├── decoder.cpp     # Decoder implementations (LibRaw)
-│   └── binding.cpp    # NAPI bindings
-├── lib/
-│   └── index.js       # JavaScript entry point
-├── dist/              # Pre-compiled binaries (tracked in git)
-│   ├── nimage.node    # Native module
-│   └── *.dll         # Runtime dependencies
-├── deps/              # Build dependencies (gitignored)
-├── scripts/
-│   ├── setup.ps1      # Full setup script
-│   └── build.js      # Build script (uses direct g++)
-├── test/
-│   ├── index.test.js  # Unit tests
-│   ├── benchmark.js   # Performance benchmarks
-│   └── convert-to-jpeg.js  # Conversion tool
-└── package.json
 ```
 
 ## Performance
 
-Format detection is extremely fast (~0.5µs regardless of buffer size) because it only reads magic bytes.
+Format detection is ~0.5µs regardless of buffer size (reads only magic bytes).
 
-RAW decoding speed depends on file size and camera:
+RAW/HEIC decode times:
 
 | File | Size | Dimensions | Decode Time |
 |------|------|------------|------------|
 | Olympus ORF | 9.4 MB | 3720 x 2800 | ~400 ms |
 | Canon CR2 | 21.8 MB | 5208 x 3476 | ~520 ms |
+| HEIC | 1.9 MB | 2316 x 3088 | <100 ms |
+
+## Module Structure
+
+```
+nImage/
+├── src/
+│   ├── decoder.h       # Base decoder class
+│   ├── decoder.cpp     # LibRawDecoder, LibHeifDecoder
+│   ├── encoder.h       # Base encoder class
+│   ├── encoder.cpp     # JpegEncoder, PngEncoder, WebPEncoder
+│   └── binding.cpp     # NAPI bindings
+├── lib/
+│   └── index.js       # JavaScript entry point
+├── dist/              # Pre-compiled binaries (tracked in git)
+│   ├── nimage.node   # Native module
+│   └── *.dll         # 51 runtime DLLs
+├── deps/              # Build dependencies (gitignored)
+├── scripts/
+│   ├── setup.ps1      # Full setup script
+│   └── build.js       # Build script (direct g++)
+├── test/
+│   ├── index.test.js  # Unit tests
+│   ├── benchmark.js   # Performance benchmarks
+│   └── assets/        # Test images
+├── docs/              # Documentation
+│   ├── nImage_spec.md # Architecture spec
+│   └── nImage_dev_plan.md # Development plan
+└── package.json
+```
+
+## Roadmap
+
+See [docs/nImage_dev_plan.md](docs/nImage_dev_plan.md) for full development plan.
+
+### Near-term (v2.0)
+- [ ] JPEG encoder
+- [ ] PNG encoder
+- [ ] WebP encoder
+- [ ] Sharp integration for transforms
+- [ ] Standard format decoders (JPEG, PNG, WebP, TIFF)
+
+### Future
+- [ ] AVIF encoder
+- [ ] LittleCMS ICC color management
+- [ ] Tile-based processing for large images
+- [ ] Thumbnail extraction
 
 ## License
 
-MIT
+MIT - David Renelt
 
-## Author
+## Repository
 
-David Renelt
+https://github.com/herrbasan/nImage
