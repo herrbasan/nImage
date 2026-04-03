@@ -352,11 +352,14 @@ function Copy-DependenciesFromMSYS2 {
         }
     }
 
-    # Copy library files
+    # Copy library files (.a, .dll.a, .lib)
     if (Test-Path $srcMingwLib) {
-        $libFiles = Get-ChildItem -Path $srcMingwLib -Include "*.a","*.dll.a","*.lib" -File
-        Write-Host "Copying $($libFiles.Count) library files..."
-        foreach ($lib in $libFiles) {
+        $libFiles = Get-ChildItem -Path $srcMingwLib -Filter "*.a" -File
+        $dllALibs = Get-ChildItem -Path $srcMingwLib -Filter "*.dll.a" -File
+        $libLibs = Get-ChildItem -Path $srcMingwLib -Filter "*.lib" -File
+        $allLibs = @($libFiles) + @($dllALibs) + @($libLibs)
+        Write-Host "Copying $($allLibs.Count) library files..."
+        foreach ($lib in $allLibs) {
             Copy-Item -Path $lib.FullName -Destination $DepLib -Force
         }
     }
