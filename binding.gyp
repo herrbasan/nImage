@@ -9,16 +9,13 @@
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")",
         "src",
-        "<(module_root_dir)/deps/libraw",
-        "<(module_root_dir)/deps/libheif/include"
+        "<(module_root_dir)/deps/include"
       ],
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
       ],
       "defines": [
-        "NAPI_DISABLE_CPP_EXCEPTIONS",
-        "UNICODE",
-        "_UNICODE"
+        "NAPI_DISABLE_CPP_EXCEPTIONS"
       ],
       "cflags!": ["-fno-exceptions"],
       "cflags_cc!": ["-fno-exceptions"],
@@ -32,24 +29,32 @@
           "msvs_settings": {
             "VCCLCompilerTool": {
               "ExceptionHandling": 1,
-              "AdditionalOptions": ["/std:c++17"]
-            },
-            "VCLinkerTool": {
-              "AdditionalLibraryDirectories": [
-                "<(module_root_dir)/deps/win/lib"
-              ]
+              "AdditionalOptions": ["/std:c++17", "/EHsc"]
             }
           },
-          "msvs_toolset": "v143",
+          "configurations": {
+            "Release": {
+              "cflags": ["-O2"],
+              "cflags_cc": ["-O2", "-std=c++17"]
+            },
+            "Debug": {
+              "cflags": ["-g"],
+              "cflags_cc": ["-g", "-std=c++17"]
+            }
+          },
           "libraries": [
+            "-L<(module_root_dir)/deps/lib",
+            "-lraw_r",
+            "-lheif",
             "-luser32",
-            "-lgdi32",
-            "-lpthread"
+            "-lgdi32"
           ],
           "copies": [
             {
               "destination": "<(module_root_dir)/build/Release",
-              "files": []
+              "files": [
+                "<(module_root_dir)/deps/bin/*.dll"
+              ]
             }
           ]
         }],
@@ -61,10 +66,11 @@
           "cflags_cc": ["-std=c++17"],
           "link_settings": {
             "library_dirs": [
-              "<(module_root_dir)/deps/linux/lib"
+              "<(module_root_dir)/deps/lib"
             ],
             "libraries": [
-              "-lpthread"
+              "-lraw_r",
+              "-lheif"
             ]
           }
         }]

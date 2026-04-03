@@ -5,7 +5,7 @@ Native image decoding via NAPI for Node.js.
 High-performance image decoding using native libraries:
 - **libraw**: RAW formats (CR2, NEF, ARW, ORF, RAF, DNG, etc.)
 - **libheif**: HEIC/HEIF formats (Apple's modern image format)
-- Full ICC color profile support
+- **ICC color profile support** (via LittleCMS)
 
 ## Why nImage?
 
@@ -45,24 +45,68 @@ nImage provides:
 
 ## Installation
 
+### Quick Start (Windows with MSYS2)
+
 ```bash
-npm install
-npm run setup  # Download/vendor dependencies
-npm run build  # Build native module
+cd modules/nImage
+npm run setup   # Downloads dependencies from MSYS2
+npm run build   # Builds native module
+npm test        # Run tests
 ```
 
-### Dependencies
+### Prerequisites
 
-nImage requires native libraries that must be obtained separately:
+**Windows: MSYS2** (recommended)
 
-**Via vcpkg (recommended):**
+Install MSYS2 from https://www.msys2.org/
+
+In the MSYS2 MINGW64 terminal:
 ```bash
-vcpkg install libraw libheif
+pacman -S mingw-w64-x86_64-libraw mingw-w64-x86_64-libheif
 ```
 
-**Or download prebuilt binaries and place them in:**
-- Headers: `deps/libraw/include/`, `deps/libheif/include/`
-- Libraries: `deps/win/lib/` (Windows) or `deps/linux/lib/` (Linux)
+Then return to regular Command Prompt/PowerShell and run:
+```bash
+npm run setup
+npm run build
+```
+
+**Linux:**
+
+```bash
+sudo apt install libraw-dev libheif-dev
+npm run setup
+npm run build
+```
+
+### Manual Setup
+
+If not using MSYS2, download and install dependencies manually:
+
+```bash
+# Create deps structure
+mkdir -p deps/include deps/lib deps/bin
+
+# libraw: https://www.libraw.org/
+# Headers to: deps/include/
+# Libs to: deps/lib/
+
+# libheif: https://github.com/strukturag/libheif
+# Headers to: deps/include/
+# Libs to: deps/lib/
+```
+
+Then: `npm run build`
+
+## Build Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run setup` | Download/vendor dependencies |
+| `npm run build` | Build native module (uses MSYS2 MinGW on Windows) |
+| `npm run build:debug` | Build with debug symbols |
+| `npm run build:msvc` | Build with MSVC (if you have vcpkg deps) |
+| `npm test` | Run tests (works without native build) |
 
 ## API
 
@@ -79,7 +123,7 @@ const result = nImage.decode(imageBuffer);
 console.log(result.width, result.height);  // 6000, 4000
 console.log(result.format);                // 'cr2'
 console.log(result.colorSpace);            // 'Adobe RGB'
-console.log(result.data);                  // Buffer with RGBA pixel data
+console.log(result.data);                   // Buffer with RGBA pixel data
 ```
 
 ### `nImage.detectFormat(buffer)`
@@ -102,19 +146,16 @@ const formats = nImage.getSupportedFormats();
 // ['cr2', 'nef', 'arw', 'heic', 'jpeg', ...]
 ```
 
-### `nImage.ImageDecoder`
+### `nImage.isLoaded`
 
-Class-based API for multiple decodes.
+Check if native module is loaded.
 
 ```javascript
-const decoder = new nImage.ImageDecoder('raw');
-
-const result1 = decoder.decode(buffer1);
-const result2 = decoder.decode(buffer2);
-
-// Get metadata without full decode
-const meta = decoder.getMetadata(buffer1);
-console.log(meta.width, meta.height, meta.camera.make);
+if (nImage.isLoaded) {
+  // Native decoding available
+} else {
+  // Only JS fallback available (format detection works)
+}
 ```
 
 ## Return Value
@@ -125,27 +166,27 @@ console.log(meta.width, meta.height, meta.camera.make);
 {
   width: number;           // Decoded image width
   height: number;          // Decoded image height
-  bitsPerChannel: number;   // Bits per channel (8 or 16)
+  bitsPerChannel: number;  // Bits per channel (8 or 16)
   channels: number;        // 3=RGB, 4=RGBA
-  colorSpace: string;      // 'sRGB', 'Adobe RGB', etc.
-  format: string;          // Original format
+  colorSpace: string;     // 'sRGB', 'Adobe RGB', etc.
+  format: string;         // Original format
   hasAlpha: boolean;       // Alpha channel present
   data: Buffer | null;     // Pixel data (RGBA)
   iccProfile: Buffer | null; // ICC color profile
   camera: {
-    make: string;           // Camera manufacturer
+    make: string;          // Camera manufacturer
     model: string;         // Camera model
   };
   capture: {
     dateTime: string;
-    exposureTime: number;   // Seconds
-    fNumber: number;        // Aperture
+    exposureTime: number;  // Seconds
+    fNumber: number;       // Aperture
     isoSpeed: number;
     focalLength: number;   // mm
   };
   raw: {
-    width: number;         // Sensor width
-    height: number;        // Sensor height
+    width: number;        // Sensor width
+    height: number;       // Sensor height
   };
   orientation: number;     // EXIF orientation (1-8)
 }
@@ -161,7 +202,7 @@ try {
   // Success
 } catch (err) {
   if (!nImage.isLoaded) {
-    console.error('Native module not built');
+    console.error('Native module not built - run npm run build');
   } else {
     console.error('Decode failed:', err.message);
   }

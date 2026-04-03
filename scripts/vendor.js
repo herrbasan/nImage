@@ -1,332 +1,398 @@
 /**
- * Vendor script to download required libraries for nImage
+ * Vendor script to set up nImage dependencies
  *
- * Downloads and extracts:
- * - libraw: For RAW image decoding (CR2, NEF, ARW, ORF, etc.)
- * - libheif: For HEIC/HEIF image decoding
+ * Automatically detects and uses MSYS2 (recommended) for prebuilt binaries,
+ * or creates a deps/ structure for manual setup.
  *
  * Run: node scripts/vendor.js
  */
 
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const os = require('os');
 
-const VENDOR_DIR = path.join(__dirname, '..', 'deps');
-const EXTRACT_DIR = path.join(__dirname, '..', 'deps', 'extracted');
+const DEPS_DIR = path.join(__dirname, '..', 'deps');
+const EXTRACT_DIR = path.join(DEPS_DIR, 'extracted');
+const MSYS2_ROOT_KEY = 'C:\\msys64';
+const MINGW64 = path.join(MSYS2_ROOT_KEY, 'mingw64');
 
-console.log('nImage Vendor Download Script');
-console.log('=============================\n');
+// Required MSYS2 packages for nImage
+const MSYS2_PACKAGES = [
+    'mingw-w64-x86_64-libraw',
+    'mingw-w64-x86_64-libheif',
+    // libheif dependencies (auto-installed as deps, but listed for clarity)
+    'mingw-w64-x86_64-libde265',
+    'mingw-w64-x86_64-aom',
+    'mingw-w64-x86_64-x265',
+    'mingw-w64-x86_64-libjpeg-turbo',
+    'mingw-w64-x86_64-libtiff',
+    'mingw-w64-x86_64-zlib',
+    'mingw-w64-x86_64-libpng',
+];
 
-// Ensure directories exist
-if (!fs.existsSync(VENDOR_DIR)) {
-    fs.mkdirSync(VENDOR_DIR, { recursive: true });
-}
-
-if (!fs.existsSync(EXTRACT_DIR)) {
-    fs.mkdirSync(EXTRACT_DIR, { recursive: true });
-}
-
-// ============================================================================
-// Library URLs (using vcpkg prebuilt binaries where available)
-// ============================================================================
-
-const LIBRAW_VERSION = '0.21.2';
-const LIBHEIF_VERSION = '1.18.2';
-
-// These URLs point to vcpkg baseline releases - you may need to find
-// actual prebuilt binaries or build from source
-const LIBRAW_URLS = {
-    win64: `https://github.com/microsoft/vcpkg/releases/download/2024.08.19/libraw_x64-windows-${LIBRAW_VERSION}.zip`,
-    linux: `https://github.com/microsoft/vcpkg/releases/download/2024.08.19/libraw_x64-linux-${LIBRAW_VERSION}.tar.gz`
-};
-
-const LIBHEIF_URLS = {
-    win64: `https://github.com/microsoft/vcpkg/releases/download/2024.08.19/libheif_x64-windows-${LIBHEIF_VERSION}.zip`,
-    linux: `https://github.com/microsoft/vcpkg/releases/download/2024.08.19/libheif_x64-linux-${LIBHEIF_VERSION}.tar.gz`
-};
+console.log('nImage Vendor Setup Script');
+console.log('==========================\n');
 
 // ============================================================================
-// Utility Functions
+// MSYS2 Detection and Setup
 // ============================================================================
 
-function getPlatform() {
-    const platform = os.platform();
-    const arch = os.arch();
-    if (platform === 'win32') return 'win64';
-    if (platform === 'linux') return 'linux';
+function findMSYS2() {
+    const possiblePaths = [
+        'C:\\msys64',
+        'C:\\msys32',
+        path.join(process.env.LOCALAPPDATA || '', 'msys64'),
+        path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'msys64'),
+    ];
+
+    // Also check common Unix-style paths (for Git Bash / WSL)
+    if (os.platform() !== 'win32') {
+        possiblePaths.push('/usr', '/opt/local');
+    }
+
+    for (const p of possiblePaths) {
+        if (p && fs.existsSync(p) && fs.existsSync(path.join(p, 'mingw64'))) {
+            return p;
+        }
+    }
     return null;
 }
 
-function downloadFile(url, destPath) {
+function runPacman(msysRoot, args, options = {}) {
     return new Promise((resolve, reject) => {
-        console.log(`Downloading: ${url}`);
-        console.log(`Destination: ${destPath}`);
+        const pacmanBin = path.join(msysRoot, 'usr', 'bin', 'pacman.exe');
+        const mingwBin = path.join(msysRoot, 'mingw64', 'bin');
 
-        const file = fs.createWriteStream(destPath);
+        // Run in MSYS2 environment with MSYS2_ARG_CONV_EXCL_N to prevent path conversion
+        const env = {
+            ...process.env,
+            MSYS2_ARG_CONV_EXCL_N: '*',  // Prevent MSYS2 from converting paths
+            MSYSTEM: 'MINGW64',
+            PATH: `${mingwBin};${path.join(msysRoot, 'usr', 'bin')};${process.env.PATH}`,
+        };
 
-        https.get(url, (response) => {
-            // Handle redirects
-            if (response.statusCode === 302 || response.statusCode === 301) {
-                console.log('Following redirect...');
-                https.get(response.headers.location, (redirectResponse) => {
-                    pipeAndSave(redirectResponse, file, destPath, resolve, reject);
-                }).on('error', reject);
-            } else {
-                pipeAndSave(response, file, destPath, resolve, reject);
-            }
-        }).on('error', reject);
-    });
-}
+        const proc = spawn(pacmanBin, args, {
+            ...options,
+            env,
+            shell: false,
+            windowsHide: true,
+        });
 
-function pipeAndSave(response, file, destPath, resolve, reject) {
-    let downloaded = 0;
-    const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+        let stdout = '';
+        let stderr = '';
 
-    response.on('data', (chunk) => {
-        downloaded += chunk.length;
-        if (totalSize > 0) {
-            const percent = ((downloaded / totalSize) * 100).toFixed(1);
-            process.stdout.write(`\rProgress: ${percent}%`);
-        }
-    });
+        proc.stdout.on('data', (d) => { stdout += d; process.stdout.write(d); });
+        proc.stderr.on('data', (d) => { stderr += d; process.stderr.write(d); });
 
-    response.pipe(file);
-
-    file.on('finish', () => {
-        file.close();
-        console.log('\nDownload complete!');
-        resolve();
-    });
-
-    response.on('error', (err) => {
-        fs.unlinkSync(destPath);
-        reject(err);
-    });
-}
-
-function extractZip(zipPath, destDir) {
-    return new Promise((resolve, reject) => {
-        console.log(`Extracting: ${zipPath}`);
-
-        const psCommand = `
-            $zip = "${zipPath.replace(/\\/g, '\\\\')}"
-            $dest = "${destDir.replace(/\\/g, '\\\\')}"
-            if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
-            Expand-Archive -Path $zip -DestinationPath $dest -Force
-        `;
-
-        const ps = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-Command', psCommand]);
-
-        ps.stdout.on('data', (data) => console.log(data.toString().trim()));
-        ps.stderr.on('data', (data) => console.error(data.toString().trim()));
-
-        ps.on('close', (code) => {
+        proc.on('close', (code) => {
             if (code === 0) {
-                resolve();
+                resolve({ stdout, stderr, code });
             } else {
-                reject(new Error(`Extract failed with code ${code}`));
+                reject(new Error(`pacman exited with code ${code}\n${stderr}`));
             }
         });
+
+        proc.on('error', reject);
     });
 }
 
-function extractTarGz(tarPath, destDir) {
-    return new Promise((resolve, reject) => {
-        console.log(`Extracting: ${tarPath}`);
+async function checkMSYS2Packages(msysRoot) {
+    console.log('\n--- Checking MSYS2 packages ---');
 
-        const tar = spawn('tar', ['-xzf', tarPath, '-C', destDir]);
+    const pacmanBin = path.join(msysRoot, 'usr', 'bin', 'pacman.exe');
+    const mingwBin = path.join(msysRoot, 'mingw64', 'bin');
 
-        tar.stdout.on('data', (data) => process.stdout.write(data));
-        tar.stderr.on('data', (data) => process.stderr.write(data));
+    // Query installed packages
+    const env = {
+        ...process.env,
+        MSYS2_ARG_CONV_EXCL_N: '*',
+        MSYSTEM: 'MINGW64',
+        PATH: `${mingwBin};${path.join(msysRoot, 'usr', 'bin')};${process.env.PATH}`,
+    };
 
-        tar.on('close', (code) => {
-            if (code === 0) {
-                resolve();
-            } else {
-                reject(new Error(`Extract failed with code ${code}`));
-            }
-        });
-    });
-}
-
-function copyLibs(srcDir, destDir, ext) {
-    console.log(`Copying ${ext} files from ${srcDir} to ${destDir}`);
-
-    if (!fs.existsSync(destDir)) {
-        fs.mkdirSync(destDir, { recursive: true });
+    let installedPkgs;
+    try {
+        installedPkgs = execSync(
+            `"${pacmanBin}" -Q --machinereadable`,
+            { env, encoding: 'utf8', windowsHide: true }
+        );
+    } catch (e) {
+        return {};
     }
 
-    const files = fs.readdirSync(srcDir);
-    for (const file of files) {
-        if (file.endsWith(ext)) {
-            const src = path.join(srcDir, file);
-            const dest = path.join(destDir, file);
-            fs.copyFileSync(src, dest);
-            console.log(`  Copied: ${file}`);
+    const pkgMap = {};
+    for (const line of installedPkgs.trim().split('\n')) {
+        const [name, version] = line.split('\t');
+        if (name && version) pkgMap[name] = version;
+    }
+
+    const missing = [];
+    for (const pkg of MSYS2_PACKAGES) {
+        if (!pkgMap[pkg]) {
+            missing.push(pkg);
+        } else {
+            console.log(`  ✓ ${pkg} (${pkgMap[pkg]})`);
+        }
+    }
+
+    return missing;
+}
+
+async function installMSYS2Packages(msysRoot, packages) {
+    if (packages.length === 0) return;
+
+    console.log(`\n--- Installing MSYS2 packages ---`);
+    console.log(`Packages to install: ${packages.join(', ')}`);
+
+    // Update package database first
+    console.log('\nUpdating package database...');
+    await runPacman(msysRoot, ['-Sy']);
+
+    console.log('\nInstalling packages...');
+    await runPacman(msysRoot, ['-S', '--noconfirm', ...packages]);
+}
+
+async function copyMSYS2Libs(msysRoot) {
+    console.log('\n--- Copying MSYS2 libraries to deps/ ---');
+
+    const srcMingw = path.join(msysRoot, 'mingw64');
+    const destInclude = path.join(DEPS_DIR, 'include');
+    const destLib = path.join(DEPS_DIR, 'lib');
+    const destBin = path.join(DEPS_DIR, 'bin');
+
+    // Clean and create directories
+    for (const d of [destInclude, destLib, destBin]) {
+        if (fs.existsSync(d)) {
+            fs.rmSync(d, { recursive: true, force: true });
+        }
+        fs.mkdirSync(d, { recursive: true });
+    }
+
+    // Headers from mingw64/include
+    const srcInclude = path.join(srcMingw, 'include');
+    if (fs.existsSync(srcInclude)) {
+        copyDir(srcInclude, destInclude);
+        console.log('  Copied headers');
+    }
+
+    // Libs from mingw64/lib
+    const srcLib = path.join(srcMingw, 'lib');
+    if (fs.existsSync(srcLib)) {
+        // Copy only .a and .dll.a files (static import libs)
+        const libFiles = fs.readdirSync(srcLib).filter(f =>
+            f.endsWith('.a') || f.endsWith('.dll.a') || f.endsWith('.lib')
+        );
+        for (const f of libFiles) {
+            fs.copyFileSync(path.join(srcLib, f), path.join(destLib, f));
+        }
+        console.log(`  Copied ${libFiles.length} library files`);
+    }
+
+    // DLLs from mingw64/bin - copy ALL to ensure all transitive deps are present
+    const srcBin = path.join(srcMingw, 'bin');
+    if (fs.existsSync(srcBin)) {
+        // Copy all DLLs to ensure all transitive dependencies are present
+        // libheif depends on: libde265, aom, x265, rav1e, svt-av1, dav1d, and their deps
+        const binFiles = fs.readdirSync(srcBin).filter(f => f.endsWith('.dll'));
+        for (const f of binFiles) {
+            fs.copyFileSync(path.join(srcBin, f), path.join(destBin, f));
+        }
+        console.log(`  Copied ${binFiles.length} DLL files (all transitive dependencies)`);
+    }
+
+    console.log('  Done copying libraries');
+}
+
+function copyDir(src, dest) {
+    if (!fs.existsSync(src)) return;
+
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+    for (const entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+
+        if (entry.isDirectory()) {
+            if (!fs.existsSync(destPath)) {
+                fs.mkdirSync(destPath, { recursive: true });
+            }
+            copyDir(srcPath, destPath);
+        } else {
+            // Only copy header files
+            if (entry.name.endsWith('.h') || entry.name.endsWith('.hpp')) {
+                fs.copyFileSync(srcPath, destPath);
+            }
         }
     }
 }
 
-function cleanDir(dir) {
-    if (fs.existsSync(dir)) {
-        fs.rmSync(dir, { recursive: true, force: true });
-    }
-    fs.mkdirSync(dir, { recursive: true });
-}
-
 // ============================================================================
-// Main Download Functions
-// ============================================================================
-
-async function downloadLibraw(platform) {
-    const libName = 'libraw';
-    const zipPath = path.join(VENDOR_DIR, `${libName}.zip`);
-    const extractPlatformDir = path.join(EXTRACT_DIR, `${libName}-${platform}`);
-
-    // Check if already downloaded
-    const winLibDir = path.join(VENDOR_DIR, 'win', 'lib');
-    const linuxLibDir = path.join(VENDOR_DIR, 'linux', 'lib');
-
-    if (platform === 'win64' && fs.existsSync(winLibDir)) {
-        console.log('LibRaw already present (win64)');
-        return;
-    }
-    if (platform === 'linux' && fs.existsSync(linuxLibDir)) {
-        console.log('LibRaw already present (linux)');
-        return;
-    }
-
-    console.log(`\n--- Downloading LibRaw ---`);
-
-    // Note: These URLs may not exist. In practice, you'd need to:
-    // 1. Use vcpkg to build and install libraw
-    // 2. Download from a trusted source that provides prebuilt binaries
-    // 3. Build from source
-    //
-    // For now, we create placeholder structure
-    console.log('Note: LibRaw binaries need to be obtained via vcpkg or built from source');
-    console.log('Expected include dir: deps/libraw/');
-    console.log('Expected lib dir: deps/win/lib/ or deps/linux/lib/');
-
-    // Create placeholder directories
-    cleanDir(path.join(VENDOR_DIR, 'libraw'));
-    fs.mkdirSync(path.join(VENDOR_DIR, 'libraw', 'include'), { recursive: true });
-    fs.mkdirSync(path.join(VENDOR_DIR, 'win', 'lib'), { recursive: true });
-    fs.mkdirSync(path.join(VENDOR_DIR, 'linux', 'lib'), { recursive: true });
-
-    // Create a README in libraw include dir
-    fs.writeFileSync(
-        path.join(VENDOR_DIR, 'libraw', 'include', 'README.md'),
-        `# LibRaw ${LIBRAW_VERSION}
-
-To obtain LibRaw:
-1. Use vcpkg: vcpkg install libraw
-2. Copy headers to this directory
-3. Copy libraries to deps/win/lib/ or deps/linux/lib/
-
-Headers needed:
-- libraw.h
-- libraw_types.h
-- libraw_const.h
-- utils/libraw_alloc.h
-`
-    );
-
-    console.log('LibRaw placeholder structure created');
-}
-
-async function downloadLibheif(platform) {
-    const libName = 'libheif';
-    const zipPath = path.join(VENDOR_DIR, `${libName}.zip`);
-    const extractPlatformDir = path.join(EXTRACT_DIR, `${libName}-${platform}`);
-
-    // Check if already downloaded
-    const winLibDir = path.join(VENDOR_DIR, 'win', 'lib');
-    const linuxLibDir = path.join(VENDOR_DIR, 'linux', 'lib');
-
-    if (platform === 'win64' && fs.existsSync(winLibDir)) {
-        console.log('LibHeif already present (win64)');
-        return;
-    }
-    if (platform === 'linux' && fs.existsSync(linuxLibDir)) {
-        console.log('LibHeif already present (linux)');
-        return;
-    }
-
-    console.log(`\n--- Downloading LibHeif ---`);
-
-    // Note: Similar to LibRaw, prebuilt binaries may not be readily available
-    console.log('Note: LibHeif binaries need to be obtained via vcpkg or built from source');
-    console.log('Expected include dir: deps/libheif/include/');
-    console.log('Expected lib dir: deps/win/lib/ or deps/linux/lib/');
-
-    // Create placeholder directories
-    cleanDir(path.join(VENDOR_DIR, 'libheif'));
-    fs.mkdirSync(path.join(VENDOR_DIR, 'libheif', 'include'), { recursive: true });
-    fs.mkdirSync(path.join(VENDOR_DIR, 'win', 'lib'), { recursive: true });
-    fs.mkdirSync(path.join(VENDOR_DIR, 'linux', 'lib'), { recursive: true });
-
-    // Create a README in libheif include dir
-    fs.writeFileSync(
-        path.join(VENDOR_DIR, 'libheif', 'include', 'README.md'),
-        `# LibHeif ${LIBHEIF_VERSION}
-
-To obtain LibHeif:
-1. Use vcpkg: vcpkg install libheif
-2. Copy headers to this directory
-3. Copy libraries to deps/win/lib/ or deps/linux/lib/
-
-Headers needed:
-- heif.h
-
-Note: libheif depends on:
-- libde265 (for H.265/HEVC support)
-- libx265 (optional, for HEVC encoding)
-- aom (for AVIF support)
-`
-    );
-
-    console.log('LibHeif placeholder structure created');
-}
-
-// ============================================================================
-// Main
+// Main Setup Flow
 // ============================================================================
 
 async function main() {
-    const platform = getPlatform();
+    console.log(`Platform: ${os.platform()} ${os.arch()}`);
+    console.log(`Node.js: ${process.version}`);
+    console.log(`Target dir: ${DEPS_DIR}\n`);
 
-    if (!platform) {
-        console.error(`Unsupported platform: ${os.platform()}`);
-        console.error('Supported platforms: win32, linux');
-        process.exit(1);
+    // Ensure deps directory exists
+    if (!fs.existsSync(DEPS_DIR)) {
+        fs.mkdirSync(DEPS_DIR, { recursive: true });
     }
 
-    console.log(`Platform: ${platform}`);
-    console.log(`Vendor dir: ${VENDOR_DIR}\n`);
+    // Try to find MSYS2
+    const msysRoot = findMSYS2();
 
-    try {
-        await downloadLibraw(platform);
-        await downloadLibheif(platform);
+    if (msysRoot) {
+        console.log(`✓ MSYS2 found at: ${msysRoot}`);
 
-        console.log('\n=== Vendor Setup Complete ===');
-        console.log('');
-        console.log('Next steps:');
-        console.log('1. Install dependencies via vcpkg:');
-        console.log('   vcpkg install libraw libheif');
-        console.log('');
-        console.log('2. Or build from source and copy headers/libs to deps/');
-        console.log('');
-        console.log('3. Then run: npm run build');
-        console.log('');
+        try {
+            // Check which packages are missing
+            const missing = await checkMSYS2Packages(msysRoot);
 
-    } catch (error) {
-        console.error('\nError:', error.message);
-        process.exit(1);
+            if (missing.length > 0) {
+                console.log(`\n⚠ Missing packages: ${missing.join(', ')}`);
+                const install = await askYesNo('Install missing packages with pacman?');
+                if (install) {
+                    await installMSYS2Packages(msysRoot, missing);
+                } else {
+                    console.log('Skipping package installation.');
+                    console.log('You can install manually with: pacman -S mingw-w64-x86_64-libraw mingw-w64-x86_64-libheif');
+                }
+            } else {
+                console.log('\n✓ All required packages are installed');
+            }
+
+            // Copy libraries to deps/
+            await copyMSYS2Libs(msysRoot);
+
+            console.log('\n=== MSYS2 Setup Complete ===');
+            printNextSteps(true);
+            return;
+
+        } catch (error) {
+            console.error(`\n✗ MSYS2 setup failed: ${error.message}`);
+            console.log('Falling back to manual setup...\n');
+        }
+    } else {
+        console.log('✗ MSYS2 not found');
+        console.log('\nMSYS2 is recommended for prebuilt dependencies.');
+        console.log('Download from: https://www.msys2.org/');
+        console.log('After installation, run this script again.\n');
     }
+
+    // Fallback: create placeholder structure
+    createPlaceholderStructure();
+    printNextSteps(false);
 }
 
-main();
+function createPlaceholderStructure() {
+    console.log('\n--- Creating placeholder deps structure ---');
+
+    const dirs = [
+        path.join(DEPS_DIR, 'libraw', 'include'),
+        path.join(DEPS_DIR, 'libheif', 'include'),
+        path.join(DEPS_DIR, 'lib'),
+        path.join(DEPS_DIR, 'bin'),
+    ];
+
+    for (const d of dirs) {
+        fs.mkdirSync(d, { recursive: true });
+    }
+
+    // Create README files with instructions
+    fs.writeFileSync(
+        path.join(DEPS_DIR, 'README.md'),
+        `# nImage Dependencies
+
+This directory contains or will contain native library dependencies.
+
+## Option 1: MSYS2 (Recommended)
+
+Install MSYS2 from https://www.msys2.org/, then run:
+
+\`\`\`bash
+# In MSYS2 MINGW64 terminal:
+pacman -S mingw-w64-x86_64-libraw mingw-w64-x86_64-libheif
+\`\`\`
+
+Then re-run: \`node scripts/vendor.js\`
+
+## Option 2: Manual
+
+Download and extract libraries to:
+- Headers: deps/libraw/include/, deps/libheif/include/
+- Libs: deps/lib/
+- DLLs: deps/bin/
+
+## Option 3: vcpkg
+
+\`\`\`bash
+vcpkg install libraw:x64-windows libheif:x64-windows
+# Copy from vcpkg_installed/x64-windows/
+\`\`\`
+`
+    );
+
+    fs.writeFileSync(
+        path.join(DEPS_DIR, 'libraw', 'include', 'README.md'),
+        `# libraw Placeholder
+
+libraw headers should be placed in this directory.
+
+Download: https://www.libraw.org/
+Or install via MSYS2: \`pacman -S mingw-w64-x86_64-libraw\`
+`
+    );
+
+    fs.writeFileSync(
+        path.join(DEPS_DIR, 'libheif', 'include', 'README.md'),
+        `# libheif Placeholder
+
+libheif headers should be placed in this directory.
+
+Download: https://github.com/strukturag/libheif
+Or install via MSYS2: \`pacman -S mingw-w64-x86_64-libheif\`
+`
+    );
+
+    console.log('Created placeholder structure in deps/');
+}
+
+function printNextSteps(hasMSYS2) {
+    console.log('\n=== Next Steps ===');
+    if (hasMSYS2) {
+        console.log('1. Build the native module:');
+        console.log('   cd modules/nImage');
+        console.log('   npm run build');
+    } else {
+        console.log('1. Install MSYS2 (recommended):');
+        console.log('   https://www.msys2.org/');
+        console.log('   Then run: node scripts/vendor.js');
+        console.log('');
+        console.log('2. Or install dependencies manually and update binding.gyp');
+    }
+    console.log('');
+    console.log('3. Run tests:');
+    console.log('   npm run test');
+}
+
+function askYesNo(question) {
+    return new Promise((resolve) => {
+        const readline = require('readline');
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
+
+        rl.question(`${question} (y/N) `, (answer) => {
+            rl.close();
+            resolve(answer.toLowerCase() === 'y');
+        });
+    });
+}
+
+main().catch((error) => {
+    console.error('\nFatal error:', error);
+    process.exit(1);
+});

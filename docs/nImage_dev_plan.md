@@ -25,15 +25,15 @@ Native image decoding via NAPI for Node.js with focus on RAW and HEIC formats.
 
 | Library | Purpose | License | Status |
 |---------|---------|--------|--------|
-| libraw | RAW decoding | LGPL/GPL | ⬜ Not integrated |
-| libheif | HEIC/HEIF/AVIF | LGPL | ⬜ Not integrated |
+| libraw | RAW decoding | LGPL/GPL | ✅ Stub complete, implementation pending |
+| libheif | HEIC/HEIF/AVIF | LGPL | ✅ Stub complete, implementation pending |
+| libde265 | HEVC decoding (for HEIC) | LGPL | ✅ Via MSYS2 |
+| aom | AV1 decoding (for AVIF) | BSD | ✅ Via MSYS2 |
 | LittleCMS | ICC color management | MIT | ⬜ Future |
-| libde265 | HEVC decoding (for HEIC) | LGPL | ⬜ Future |
-| aom | AV1 decoding (for AVIF) | BSD | ⬜ Future |
 
 ### Dependencies
-- libraw depends on: dcraw compatibility, color matrices
-- libheif depends on: libde265 (HEVC), aom (AVIF), libjpeg, libpng
+- libraw depends on: dcraw compatibility, color matrices (via MSYS2)
+- libheif depends on: libde265 (HEVC), aom (AVIF), libjpeg, libpng (all via MSYS2)
 
 ---
 
@@ -87,32 +87,43 @@ Native image decoding via NAPI for Node.js with focus on RAW and HEIC formats.
 
 ## 4. Build System
 
-### Windows
-```
-npm run setup    # Downloads dependencies via vendor.js
-npm run configure # node-gyp configure
-npm run build    # Compiles nimage.node
+### Windows (MSYS2 - recommended)
+```bash
+# Install MSYS2 from https://www.msys2.org/
+# In MSYS2 MINGW64 terminal:
+pacman -S mingw-w64-x86_64-libraw mingw-w64-x86_64-libheif
+
+# Back in regular terminal:
+npm run setup    # Copies MSYS2 deps to deps/
+npm run build    # Builds using MinGW
 ```
 
 ### Linux
 ```bash
-# Install libraw and libheif via vcpkg or package manager
-vcpkg install libraw libheif
+# Install libraw and libheif via package manager
+sudo apt install libraw-dev libheif-dev
 npm run setup
 npm run build
 ```
 
 ### Dependencies Installation
 
-**Via vcpkg (recommended):**
+**Via MSYS2 pacman (Windows - recommended):**
+```bash
+pacman -S mingw-w64-x86_64-libraw mingw-w64-x86_64-libheif
+```
+
+**Via vcpkg:**
 ```bash
 vcpkg install libraw:x64-windows libheif:x64-windows
+# Note: requires manual copy to deps/ structure
 ```
 
 **Or manually:**
 1. Download prebuilt binaries or build from source
-2. Copy headers to `deps/libraw/include/` and `deps/libheif/include/`
-3. Copy libraries to `deps/win/lib/` or `deps/linux/lib/`
+2. Copy headers to `deps/include/`
+3. Copy libraries to `deps/lib/`
+4. Copy DLLs to `deps/bin/`
 
 ---
 

@@ -10,11 +10,12 @@
     "deps/win/bin/*.dll"
   ],
   "scripts": {
-    "install": "node scripts/install-prebuilt.js || echo 'Pre-built binary not available, run npm run setup'",
+    "install": "node scripts/vendor.js --install",
     "setup": "node scripts/vendor.js",
-    "configure": "node-gyp configure",
-    "build": "npm run setup && npm run configure && node-gyp build",
-    "build:debug": "npm run configure && node-gyp build --debug",
+    "configure": "node-gyp configure --compiler=mingw",
+    "build": "npm run setup && node scripts/build.js",
+    "build:debug": "node scripts/build.js --debug",
+    "build:msvc": "npm run setup && node-gyp configure && node-gyp build",
     "rebuild": "node-gyp rebuild",
     "clean": "node-gyp clean",
     "test": "node test/index.test.js",
