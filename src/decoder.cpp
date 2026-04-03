@@ -3,8 +3,10 @@
  */
 
 #include "decoder.h"
+#include <libraw.h>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
 
 // ============================================================================
 // Format Detection
@@ -108,55 +110,247 @@ ImageDecoder* ImageDecoder::createDecoderForBuffer(const uint8_t* buffer, size_t
 // ============================================================================
 
 LibRawDecoder::LibRawDecoder() : libraw_data_(nullptr) {
-    // Note: In full implementation, this would initialize libraw
-    // For now, we set up the opaque handle
+    // Initialize libraw
+    libraw_data_ = new LibRaw();
 }
 
 LibRawDecoder::~LibRawDecoder() {
     close();
+    if (libraw_data_) {
+        delete static_cast<LibRaw*>(libraw_data_);
+        libraw_data_ = nullptr;
+    }
 }
 
 bool LibRawDecoder::openBuffer(const uint8_t* buffer, size_t size) {
-    // Note: Full implementation would use libraw's open_buffer()
-    // For now, just verify we have valid data
-    if (!buffer || size < 64) {
-        error_ = "Buffer too small or null";
+    if (!libraw_data_ || !buffer || size < 64) {
+        error_ = "Invalid buffer or size too small";
         return false;
     }
+
+    LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
+
+    // Open the buffer
+    int ret = raw->open_buffer((void*)buffer, size);
+    if (ret != 0) {
+        error_ = "Failed to open RAW buffer (error code: " + std::to_string(ret) + ")";
+        return false;
+    }
+
     return true;
 }
 
 void LibRawDecoder::close() {
-    // Note: Full implementation would call libraw_close()
-    libraw_data_ = nullptr;
+    if (libraw_data_) {
+        LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
+        raw->recycle();
+        raw->close();
+    }
 }
 
 bool LibRawDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output) {
-    if (!openBuffer(buffer, size)) {
+    if (!buffer || size < 64) {
+        error_ = "Buffer too small or null";
         return false;
     }
 
-    // TODO: Full libraw implementation
-    // Steps:
-    // 1. libraw_open_buffer() or libraw_open()
-    // 2. libraw_unpack()
-    // 3. libraw_dcraw_process() or libraw_dcraw_ppm_tiff_writer()
-    // 4. Extract pixel data to ImageData structure
+    LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
 
-    error_ = "LibRaw decoder not yet implemented - dependencies not bundled";
-    return false;
+    // Open buffer if not already open (or reopen)
+    if (raw->imgdata.params.shot_select < 0) {
+        int ret = raw->open_buffer((void*)buffer, size);
+        if (ret != 0) {
+            error_ = "Failed to open RAW buffer (error code: " + std::to_string(ret) + ")";
+            return false;
+        }
+    }
+
+    // Unpack the RAW data
+    int ret = raw->unpack();
+    if (ret != 0) {
+        error_ = "Failed to unpack RAW data (error code: " + std::to_string(ret) + ")";
+        return false;
+    }
+
+    // Unpack 2 for full resolution on some cameras
+    // This is safe to call after unpack() - it's a no-op for most cameras
+    raw->unpack2();
+
+    // Process with dcraw - this demosaics and converts to image
+    ret = raw->dcraw_process();
+    if (ret != 0) {
+        error_ = "Failed to process RAW data (error code: " + std::to_string(ret) + ")";
+        return false;
+    }
+
+    // Extract to output
+    return processRAW(output);
+}
+
+bool LibRawDecoder::processRAW(ImageData& output) {
+    LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
+
+    // Get output dimensions
+    int width = raw->imgdata.sizes.output_width;
+    int height = raw->imgdata.sizes.output_height;
+    int colors = raw->imgdata.idata.colors;
+
+    if (width <= 0 || height <= 0) {
+        error_ = "Invalid output dimensions from RAW";
+        return false;
+    }
+
+    // Get the processed image data
+    // After dcraw_process(), data is in imgdata.image as 16-bit RGB
+    libraw_processed_image_t* img = raw->dcraw_make_mem_image(nullptr);
+    if (!img) {
+        error_ = "Failed to extract processed image from libraw";
+        return false;
+    }
+
+    // Copy dimensions
+    output.width = width;
+    output.height = height;
+    output.bitsPerChannel = 8;  // dcraw_process outputs 8-bit
+    output.channels = (img->colors == 4) ? 4 : 3;
+    output.hasAlpha = (img->colors == 4);
+    output.colorSpace = "sRGB";  // Default, could be Adobe RGB based on camera
+
+    // Set format from what libraw detected
+    output.format = ImageFormatUtil::formatToString(
+        ImageFormatUtil::formatFromString(raw->imgdata.idata.model)
+    );
+    if (output.format == "unknown") {
+        output.format = "raw";
+    }
+
+    // Copy pixel data
+    size_t dataSize = img->width * img->height * img->colors;
+    output.data.resize(dataSize);
+    std::memcpy(output.data.data(), img->data, dataSize);
+
+    // Copy metadata
+    extractMetadataToImageData(output);
+
+    // Free the memory
+    raw->dcraw_free_mem_image(img);
+
+    return true;
+}
+
+void LibRawDecoder::extractMetadataToImageData(ImageData& output) {
+    LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
+
+    // Camera info
+    if (raw->imgdata.idata.make[0]) {
+        output.cameraMake = raw->imgdata.idata.make;
+    }
+    if (raw->imgdata.idata.model[0]) {
+        output.cameraModel = raw->imgdata.idata.model;
+    }
+
+    // Capture settings
+    if (raw->imgdata.other.shutter > 0) {
+        output.exposureTime = raw->imgdata.other.shutter;
+    }
+    if (raw->imgdata.other.aperture > 0) {
+        output.fNumber = raw->imgdata.other.aperture;
+    }
+    if (raw->imgdata.other.iso_speed > 0) {
+        output.isoSpeed = raw->imgdata.other.iso_speed;
+    }
+    if (raw->imgdata.other.focal_len > 0) {
+        output.focalLength = raw->imgdata.other.focal_len;
+    }
+
+    // Date/time
+    if (raw->imgdata.other.datetime[0]) {
+        output.dateTime = raw->imgdata.other.datetime;
+    }
+
+    // RAW dimensions (sensor)
+    output.rawWidth = raw->imgdata.sizes.raw_width;
+    output.rawHeight = raw->imgdata.sizes.raw_height;
+
+    // Orientation
+    output.orientation = raw->imgdata.sizes.flip;
+    if (output.orientation < 1 || output.orientation > 8) {
+        output.orientation = 1;
+    }
 }
 
 bool LibRawDecoder::getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) {
-    if (!openBuffer(buffer, size)) {
+    if (!buffer || size < 64) {
+        error_ = "Buffer too small or null";
         return false;
     }
 
-    // TODO: Full libraw implementation
-    // Use libraw_get_i_thumbnail(), libraw_get_exif_data(), etc.
+    LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
 
-    error_ = "LibRaw decoder not yet implemented - dependencies not bundled";
-    return false;
+    // Open and unpack only (no full processing)
+    int ret = raw->open_buffer((void*)buffer, size);
+    if (ret != 0) {
+        error_ = "Failed to open RAW buffer (error code: " + std::to_string(ret) + ")";
+        return false;
+    }
+
+    ret = raw->unpack();
+    if (ret != 0) {
+        error_ = "Failed to unpack RAW data (error code: " + std::to_string(ret) + ")";
+        return false;
+    }
+
+    // Extract metadata without full decode
+    extractMetadata(metadata);
+
+    return true;
+}
+
+bool LibRawDecoder::extractMetadata(ImageMetadata& metadata) {
+    LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
+
+    // Format info
+    metadata.format = raw->imgdata.idata.model[0] ?
+        ImageFormatUtil::formatToString(
+            ImageFormatUtil::formatFromString(raw->imgdata.idata.model)) : "raw";
+
+    // Dimensions
+    metadata.width = raw->imgdata.sizes.output_width;
+    metadata.height = raw->imgdata.sizes.output_height;
+    metadata.rawWidth = raw->imgdata.sizes.raw_width;
+    metadata.rawHeight = raw->imgdata.sizes.raw_height;
+
+    // Camera info
+    if (raw->imgdata.idata.make[0]) {
+        metadata.cameraMake = raw->imgdata.idata.make;
+    }
+    if (raw->imgdata.idata.model[0]) {
+        metadata.cameraModel = raw->imgdata.idata.model;
+    }
+
+    // Capture settings
+    metadata.isoSpeed = raw->imgdata.other.iso_speed;
+    metadata.exposureTime = raw->imgdata.other.shutter;
+    metadata.fNumber = raw->imgdata.other.aperture;
+    metadata.focalLength = raw->imgdata.other.focal_len;
+
+    // Color
+    metadata.colorSpace = "sRGB";
+    metadata.hasAlpha = false;
+    metadata.bitsPerSample = 16;  // RAW is typically 12-14 bit, we output as 16
+
+    // Orientation
+    metadata.orientation = raw->imgdata.sizes.flip;
+    if (metadata.orientation < 1 || metadata.orientation > 8) {
+        metadata.orientation = 1;
+    }
+
+    // Lens
+    if (raw->imgdata.lens.NikonLensType[0] || raw->imgdata.lens.MinoltaLensType[0]) {
+        metadata.lensModel = raw->imgdata.lens.lensmodel;
+    }
+
+    return true;
 }
 
 bool LibRawDecoder::supportsFormat(ImageFormat format) const {
