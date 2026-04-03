@@ -45,7 +45,8 @@ $MINGW64_BIN = "$MSYS2_ROOT\mingw64\bin"
 
 $RequiredPackages = @(
     "mingw-w64-x86_64-libraw",
-    "mingw-w64-x86_64-libheif"
+    "mingw-w64-x86_64-libheif",
+    "mingw-w64-x86_64-imagemagick"
 )
 
 $ModuleRoot = Split-Path -Parent $PSScriptRoot

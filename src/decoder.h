@@ -129,7 +129,14 @@ enum class ImageFormat {
     PNG,
     TIFF,
     WEBP,
-    GIF
+    GIF,
+    // ImageMagick-handled formats
+    PSD,    // Photoshop Document
+    PDF,    // PDF Document (rasterized)
+    SVG,    // SVG Vector (rasterized)
+    EXR,    // OpenEXR
+    HDR,    // Radiance HDR
+    BIGTIFF // BigTIFF (>4GB)
 };
 
 /**
@@ -231,6 +238,30 @@ private:
 };
 
 /**
+ * MagickDecoder for ImageMagick-handled formats (PSD, PDF, SVG, EXR, HDR, BigTIFF)
+ */
+class MagickDecoder : public ImageDecoder {
+public:
+    MagickDecoder();
+    ~MagickDecoder() override;
+
+    bool decode(const uint8_t* buffer, size_t size, ImageData& output) override;
+    bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) override;
+    bool supportsFormat(ImageFormat format) const override;
+    const char* formatName() const override { return "ImageMagick"; }
+
+private:
+    // Internal state
+    void* imageInfo_;      // MagickCore ImageInfo*
+    void* exceptionInfo_;  // ExceptionInfo*
+
+    bool openBuffer(const uint8_t* buffer, size_t size);
+    bool close();
+    bool processImage(ImageData& output);
+    bool extractMetadataOnly(ImageMetadata& metadata);
+};
+
+/**
  * Format utility functions
  */
 namespace ImageFormatUtil {
@@ -246,6 +277,11 @@ namespace ImageFormatUtil {
     bool isPNG(const uint8_t* buffer, size_t size);
     bool isTIFF(const uint8_t* buffer, size_t size);
     bool isWebP(const uint8_t* buffer, size_t size);
+    // ImageMagick format detection
+    bool isPSD(const uint8_t* buffer, size_t size);
+    bool isPDF(const uint8_t* buffer, size_t size);
+    bool isEXR(const uint8_t* buffer, size_t size);
+    bool isHDR(const uint8_t* buffer, size_t size);
 }
 
 #endif // NIMAGE_DECODER_H

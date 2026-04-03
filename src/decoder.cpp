@@ -4,6 +4,12 @@
 
 #include "decoder.h"
 #include <libraw/libraw.h>
+
+// ImageMagick configuration - must be defined before including MagickCore
+#define MAGICKCORE_QUANTUM_DEPTH 16
+#define MAGICKCORE_HDRI_ENABLE 0
+
+#include <ImageMagick-7/MagickCore/MagickCore.h>
 #include <cstring>
 #include <algorithm>
 #include <cmath>
@@ -34,6 +40,35 @@ FormatDetection ImageDecoder::detectFormat(const uint8_t* buffer, size_t size) {
         result.format = ImageFormat::HEIC;
         result.confidence = 0.95f;
         result.mimeType = "image/heic";
+        return result;
+    }
+
+    // Check ImageMagick-handled formats
+    if (ImageFormatUtil::isPSD(buffer, size)) {
+        result.format = ImageFormat::PSD;
+        result.confidence = 0.95f;
+        result.mimeType = "image/vnd.adobe.photoshop";
+        return result;
+    }
+
+    if (ImageFormatUtil::isPDF(buffer, size)) {
+        result.format = ImageFormat::PDF;
+        result.confidence = 0.95f;
+        result.mimeType = "application/pdf";
+        return result;
+    }
+
+    if (ImageFormatUtil::isEXR(buffer, size)) {
+        result.format = ImageFormat::EXR;
+        result.confidence = 0.95f;
+        result.mimeType = "image/x-exr";
+        return result;
+    }
+
+    if (ImageFormatUtil::isHDR(buffer, size)) {
+        result.format = ImageFormat::HDR;
+        result.confidence = 0.95f;
+        result.mimeType = "image/vnd.radiance";
         return result;
     }
 
@@ -91,6 +126,14 @@ ImageDecoder* ImageDecoder::createDecoder(ImageFormat format) {
         case ImageFormat::HEIF:
         case ImageFormat::AVIF:
             return new LibHeifDecoder();
+
+        case ImageFormat::PSD:
+        case ImageFormat::PDF:
+        case ImageFormat::SVG:
+        case ImageFormat::EXR:
+        case ImageFormat::HDR:
+        case ImageFormat::BIGTIFF:
+            return new MagickDecoder();
 
         default:
             return nullptr;
@@ -588,6 +631,226 @@ bool LibHeifDecoder::supportsFormat(ImageFormat format) const {
 }
 
 // ============================================================================
+// MagickDecoder (ImageMagick/MagickCore)
+// ============================================================================
+
+MagickDecoder::MagickDecoder() : imageInfo_(nullptr), exceptionInfo_(nullptr) {
+    // Initialize ImageMagick
+    MagickCoreGenesis(nullptr, MagickTrue);
+
+    // Create ImageInfo and ExceptionInfo
+    imageInfo_ = CloneImageInfo(nullptr);
+    exceptionInfo_ = AcquireExceptionInfo();
+}
+
+MagickDecoder::~MagickDecoder() {
+    if (imageInfo_) {
+        DestroyImageInfo(static_cast<ImageInfo*>(imageInfo_));
+        imageInfo_ = nullptr;
+    }
+    if (exceptionInfo_) {
+        DestroyExceptionInfo(static_cast<ExceptionInfo*>(exceptionInfo_));
+        exceptionInfo_ = nullptr;
+    }
+    MagickCoreTerminus();
+}
+
+bool MagickDecoder::openBuffer(const uint8_t* buffer, size_t size) {
+    // Buffer reading is done directly in decode/getMetadata
+    return true;
+}
+
+bool MagickDecoder::close() {
+    return true;
+}
+
+bool MagickDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output) {
+    if (!buffer || size < 12) {
+        error_ = "Buffer too small or null";
+        return false;
+    }
+
+    ImageInfo* info = static_cast<ImageInfo*>(imageInfo_);
+    ExceptionInfo* exception = static_cast<ExceptionInfo*>(exceptionInfo_);
+
+    // Reset ImageInfo
+    GetImageInfo(info);
+
+    // Set up blob for reading from memory
+    info->blob = (void*)buffer;
+    info->length = size;
+
+    // Read image
+    Image* image = ReadImage(info, exception);
+    if (!image || exception->severity != UndefinedException) {
+        if (exception->severity != UndefinedException) {
+            error_ = std::string("ImageMagick decode error: ") + exception->reason;
+        } else {
+            error_ = "Failed to decode image with ImageMagick";
+        }
+        if (image) {
+            DestroyImage(image);
+        }
+        return false;
+    }
+
+    // Ensure image is in RGB/RGBA format
+    if (image->alpha_trait != UndefinedPixelTrait) {
+        (void)SetImageAlpha(image, OpaqueAlpha, exception);
+    }
+
+    // Coerce to RGB/RGBA
+    if (SetImageType(image, TrueColorType, exception) == MagickFalse) {
+        error_ = "Failed to convert image to RGB";
+        DestroyImage(image);
+        return false;
+    }
+
+    // Get image properties
+    int width = static_cast<int>(image->columns);
+    int height = static_cast<int>(image->rows);
+    int channels = (image->alpha_trait != UndefinedPixelTrait) ? 4 : 3;
+    int bitsPerChannel = (image->depth > 8) ? 16 : 8;
+
+    // Allocate output buffer
+    size_t dataSize = (size_t)width * height * channels * (bitsPerChannel / 8);
+    output.data.resize(dataSize);
+    output.width = width;
+    output.height = height;
+    output.bitsPerChannel = bitsPerChannel;
+    output.channels = channels;
+    output.hasAlpha = (channels == 4);
+    output.colorSpace = "sRGB";
+    output.format = image->magick;
+
+    // Export pixels row by row
+    if (bitsPerChannel == 8) {
+        char* pixelData = reinterpret_cast<char*>(output.data.data());
+        for (int y = 0; y < height; y++) {
+            Quantum* pixels = GetAuthenticPixels(image, 0, y, width, 1, exception);
+            if (!pixels) {
+                DestroyImage(image);
+                error_ = "Failed to read pixel row";
+                return false;
+            }
+            for (int x = 0; x < width; x++) {
+                size_t idx = (y * width + x) * channels;
+                pixelData[idx + 0] = static_cast<char>(GetPixelRed(image, pixels));
+                pixelData[idx + 1] = static_cast<char>(GetPixelGreen(image, pixels));
+                pixelData[idx + 2] = static_cast<char>(GetPixelBlue(image, pixels));
+                if (channels == 4) {
+                    pixelData[idx + 3] = static_cast<char>(GetPixelAlpha(image, pixels));
+                }
+                pixels += channels;
+            }
+        }
+    } else {
+        uint16_t* pixelData = reinterpret_cast<uint16_t*>(output.data.data());
+        for (int y = 0; y < height; y++) {
+            Quantum* pixels = GetAuthenticPixels(image, 0, y, width, 1, exception);
+            if (!pixels) {
+                DestroyImage(image);
+                error_ = "Failed to read pixel row";
+                return false;
+            }
+            for (int x = 0; x < width; x++) {
+                size_t idx = (y * width + x) * channels;
+                pixelData[idx + 0] = static_cast<uint16_t>(GetPixelRed(image, pixels));
+                pixelData[idx + 1] = static_cast<uint16_t>(GetPixelGreen(image, pixels));
+                pixelData[idx + 2] = static_cast<uint16_t>(GetPixelBlue(image, pixels));
+                if (channels == 4) {
+                    pixelData[idx + 3] = static_cast<uint16_t>(GetPixelAlpha(image, pixels));
+                }
+                pixels += channels;
+            }
+        }
+    }
+
+    // Sync changes
+    (void)SyncAuthenticPixels(image, exception);
+
+    // Extract basic metadata
+    output.orientation = static_cast<int>(image->orientation);
+    if (output.orientation < 1 || output.orientation > 8) {
+        output.orientation = 1;
+    }
+
+    // Free image
+    DestroyImage(image);
+
+    return true;
+}
+
+bool MagickDecoder::getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) {
+    if (!buffer || size < 12) {
+        error_ = "Buffer too small or null";
+        return false;
+    }
+
+    ImageInfo* info = static_cast<ImageInfo*>(imageInfo_);
+    ExceptionInfo* exception = static_cast<ExceptionInfo*>(exceptionInfo_);
+
+    GetImageInfo(info);
+
+    // Set up blob for reading from memory
+    info->blob = (void*)buffer;
+    info->length = size;
+
+    // Use PingImage to read header only (no pixel data)
+    Image* image = ReadImage(info, exception);
+    if (!image || exception->severity != UndefinedException) {
+        if (exception->severity != UndefinedException) {
+            error_ = std::string("ImageMagick ping error: ") + exception->reason;
+        } else {
+            error_ = "Failed to ping image with ImageMagick";
+        }
+        if (image) {
+            DestroyImage(image);
+        }
+        return false;
+    }
+
+    // Extract metadata
+    metadata.width = static_cast<int>(image->columns);
+    metadata.height = static_cast<int>(image->rows);
+    metadata.hasAlpha = (image->alpha_trait != UndefinedPixelTrait);
+    metadata.bitsPerSample = static_cast<int>(image->depth);
+    metadata.colorSpace = "sRGB";
+    metadata.orientation = static_cast<int>(image->orientation);
+    if (metadata.orientation < 1 || metadata.orientation > 8) {
+        metadata.orientation = 1;
+    }
+
+    // Get format from magick string
+    metadata.format = image->magick;
+
+    DestroyImage(image);
+    return true;
+}
+
+bool MagickDecoder::extractMetadataOnly(ImageMetadata& metadata) {
+    return true;
+}
+
+bool MagickDecoder::processImage(ImageData& output) {
+    return true;
+}
+
+bool MagickDecoder::supportsFormat(ImageFormat format) const {
+    switch (format) {
+        case ImageFormat::PSD:
+        case ImageFormat::PDF:
+        case ImageFormat::SVG:
+        case ImageFormat::EXR:
+        case ImageFormat::HDR:
+        case ImageFormat::BIGTIFF:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// ============================================================================
 // Format Utilities
 // ============================================================================
 
@@ -609,6 +872,11 @@ ImageFormat formatFromString(const std::string& format) {
     if (format == "tiff" || format == "tif") return ImageFormat::TIFF;
     if (format == "webp") return ImageFormat::WEBP;
     if (format == "gif") return ImageFormat::GIF;
+    if (format == "psd") return ImageFormat::PSD;
+    if (format == "pdf") return ImageFormat::PDF;
+    if (format == "svg") return ImageFormat::SVG;
+    if (format == "exr") return ImageFormat::EXR;
+    if (format == "hdr") return ImageFormat::HDR;
     return ImageFormat::UNKNOWN;
 }
 
@@ -632,6 +900,12 @@ std::string formatToString(ImageFormat format) {
         case ImageFormat::TIFF: return "tiff";
         case ImageFormat::WEBP: return "webp";
         case ImageFormat::GIF: return "gif";
+        case ImageFormat::PSD: return "psd";
+        case ImageFormat::PDF: return "pdf";
+        case ImageFormat::SVG: return "svg";
+        case ImageFormat::EXR: return "exr";
+        case ImageFormat::HDR: return "hdr";
+        case ImageFormat::BIGTIFF: return "bigtiff";
         default: return "unknown";
     }
 }
@@ -656,6 +930,12 @@ std::string formatToMimeType(ImageFormat format) {
         case ImageFormat::TIFF: return "image/tiff";
         case ImageFormat::WEBP: return "image/webp";
         case ImageFormat::GIF: return "image/gif";
+        case ImageFormat::PSD: return "image/vnd.adobe.photoshop";
+        case ImageFormat::PDF: return "application/pdf";
+        case ImageFormat::SVG: return "image/svg+xml";
+        case ImageFormat::EXR: return "image/x-exr";
+        case ImageFormat::HDR: return "image/vnd.radiance";
+        case ImageFormat::BIGTIFF: return "image/tiff";
         default: return "application/octet-stream";
     }
 }
@@ -680,6 +960,12 @@ const char* formatToExtension(ImageFormat format) {
         case ImageFormat::TIFF: return "tiff";
         case ImageFormat::WEBP: return "webp";
         case ImageFormat::GIF: return "gif";
+        case ImageFormat::PSD: return "psd";
+        case ImageFormat::PDF: return "pdf";
+        case ImageFormat::SVG: return "svg";
+        case ImageFormat::EXR: return "exr";
+        case ImageFormat::HDR: return "hdr";
+        case ImageFormat::BIGTIFF: return "tiff";
         default: return "bin";
     }
 }
@@ -758,6 +1044,31 @@ bool isRAW(const uint8_t* buffer, size_t size) {
     }
 
     return false;
+}
+
+bool isPSD(const uint8_t* buffer, size_t size) {
+    // PSD signature: "8BPS" at offset 0
+    if (size < 4) return false;
+    return strncmp(reinterpret_cast<const char*>(buffer), "8BPS", 4) == 0;
+}
+
+bool isPDF(const uint8_t* buffer, size_t size) {
+    // PDF signature: "%PDF-" at offset 0
+    if (size < 5) return false;
+    return strncmp(reinterpret_cast<const char*>(buffer), "%PDF-", 5) == 0;
+}
+
+bool isEXR(const uint8_t* buffer, size_t size) {
+    // EXR signature: 0x76, 0x2f, 0x31, 0x01 at offset 0
+    if (size < 4) return false;
+    return buffer[0] == 0x76 && buffer[1] == 0x2f &&
+           buffer[2] == 0x31 && buffer[3] == 0x01;
+}
+
+bool isHDR(const uint8_t* buffer, size_t size) {
+    // HDR/Radiance signature: "#?RADIANCE" at offset 0
+    if (size < 10) return false;
+    return strncmp(reinterpret_cast<const char*>(buffer), "#?RADIANCE", 10) == 0;
 }
 
 } // namespace ImageFormatUtil

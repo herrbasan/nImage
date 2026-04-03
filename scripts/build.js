@@ -128,6 +128,7 @@ async function build() {
         `-I${toMsysPath(napiInclude)}`,
         `-I${toMsysPath(path.join(MODULE_ROOT, 'src'))}`,
         `-I${toMsysPath(path.join(MODULE_ROOT, 'deps', 'include'))}`,
+        `-I${toMsysPath(path.join(MODULE_ROOT, 'deps', 'include', 'ImageMagick-7'))}`,
     ];
 
     // Add Node.js headers if found
@@ -142,12 +143,14 @@ async function build() {
     const libPaths = [
         `-L${toMsysPath(path.join(MODULE_ROOT, 'deps', 'lib'))}`,
         `-L${toMsysPath(path.join(MODULE_ROOT, 'build', 'Release'))}`,
+        `-L${toMsysPath(path.join(process.env.LOCALAPPDATA || '', 'node-gyp', 'Cache', '39.2.3', 'x64'))}`,
     ];
 
     // Libraries (MinGW style)
     const libs = [
         '-lraw_r',
         '-lheif',
+        '-lMagickCore-7.Q16HDRI',
         '-lnode',
         '-luser32',
         '-lgdi32',

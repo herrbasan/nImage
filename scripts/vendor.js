@@ -21,6 +21,7 @@ const MINGW64 = path.join(MSYS2_ROOT_KEY, 'mingw64');
 const MSYS2_PACKAGES = [
     'mingw-w64-x86_64-libraw',
     'mingw-w64-x86_64-libheif',
+    'mingw-w64-x86_64-imagemagick',
     // libheif dependencies (auto-installed as deps, but listed for clarity)
     'mingw-w64-x86_64-libde265',
     'mingw-w64-x86_64-aom',

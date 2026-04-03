@@ -280,19 +280,11 @@ static Napi::Value DetectFormat(const Napi::CallbackInfo& info) {
 static Napi::Value GetSupportedFormats(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
-    Napi::Array formats = Napi::Array::New(env);
-
-    // RAW formats
-    std::vector<std::string> rawFormats = {"cr2", "nef", "arw", "orf", "raf", "rw2", "dng", "pef", "srw", "rwl"};
-    for (size_t i = 0; i < rawFormats.size(); i++) {
-        formats.Set(i, Napi::String::New(env, rawFormats[i]));
-    }
-
-    // HEIC formats
     Napi::Array all = Napi::Array::New(env);
     size_t idx = 0;
 
     // RAW formats
+    std::vector<std::string> rawFormats = {"cr2", "nef", "arw", "orf", "raf", "rw2", "dng", "pef", "srw", "rwl"};
     for (const auto& f : rawFormats) {
         all.Set(idx++, Napi::String::New(env, f));
     }
@@ -301,6 +293,14 @@ static Napi::Value GetSupportedFormats(const Napi::CallbackInfo& info) {
     all.Set(idx++, Napi::String::New(env, "heic"));
     all.Set(idx++, Napi::String::New(env, "heif"));
     all.Set(idx++, Napi::String::New(env, "avif"));
+
+    // ImageMagick-handled formats
+    all.Set(idx++, Napi::String::New(env, "psd"));
+    all.Set(idx++, Napi::String::New(env, "pdf"));
+    all.Set(idx++, Napi::String::New(env, "svg"));
+    all.Set(idx++, Napi::String::New(env, "exr"));
+    all.Set(idx++, Napi::String::New(env, "hdr"));
+    all.Set(idx++, Napi::String::New(env, "bigtiff"));
 
     // Standard formats
     all.Set(idx++, Napi::String::New(env, "jpeg"));
