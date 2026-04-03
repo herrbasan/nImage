@@ -8,6 +8,7 @@
     It handles:
     - MSYS2 installation (if not present)
     - Package installation via pacman
+    - Direct binary download fallback (if pacman fails)
     - Copying dependencies to deps/
     - Building the native module
 
@@ -84,6 +85,18 @@ function Test-Command {
     return $?
 }
 
+function Test-MSYS2PackagesInstalled {
+    param([string]$PacmanPath)
+
+    $env:MSYSTEM = "MINGW64"
+    $env:PATH = "$MINGW64_BIN;$($MSYS2_ROOT)\usr\bin;$env:PATH"
+
+    $installed = & $PacmanPath -Q 2>$null | ForEach-Object { ($_ -split ' ')[0] }
+    $missing = $RequiredPackages | Where-Object { $_ -notin $installed }
+
+    return $missing.Count -eq 0
+}
+
 # ============================================================================
 # MSYS2 Installation
 # ============================================================================
@@ -115,7 +128,7 @@ function Install-MSYS2 {
 }
 
 # ============================================================================
-# Package Installation
+# Package Installation via pacman
 # ============================================================================
 
 function Install-Packages {
@@ -146,28 +159,143 @@ function Install-Packages {
     Write-Host "Missing packages: $($missing -join ', ')"
     Write-Host ""
 
-    # Update package database first
-    Write-Host "Updating package database (this may take a minute)..."
+    # Try to update package database
+    Write-Host "Updating package database..."
     $syncResult = & $pacman -Sy 2>&1
+
     if ($LASTEXITCODE -ne 0) {
-        Write-Warn "Package sync had issues: $syncResult"
+        Write-Warn "Pacman sync failed (likely SSL/certificate issue with MSYS2)"
+        Write-Host "Falling back to direct binary download..."
+        Download-DirectBinaries
+        return
     }
 
     # Install missing packages
     Write-Host "Installing packages: $($RequiredPackages -join ', ')..."
     $installResult = & $pacman -S --noconfirm $RequiredPackages 2>&1
+
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to install packages: $installResult"
+        Write-Warn "Pacman install failed"
+        Write-Host "Falling back to direct binary download..."
+        Download-DirectBinaries
+        return
     }
 
     Write-Success "Packages installed"
 }
 
 # ============================================================================
-# Copy Dependencies
+# Direct Binary Download (fallback when pacman fails)
 # ============================================================================
 
-function Copy-Dependencies {
+function Download-DirectBinaries {
+    Write-Step "Downloading binaries directly"
+
+    # Create deps directories
+    foreach ($dir in @($DepInclude, $DepLib, $DepBin)) {
+        if (Test-Path $dir) {
+            Remove-Item -Path $dir -Recurse -Force
+        }
+        New-Item -Path $dir -ItemType Directory -Force | Out-Null
+    }
+
+    # Download libraw from GitHub releases
+    Write-Host "Downloading libraw..."
+    $librawUrl = "https://github.com/LibRaw/LibRaw/releases/download/0.21.2/LibRaw-0.21.2-msys2-x64.zip"
+    $librawZip = "$env:TEMP\libraw.zip"
+
+    try {
+        Invoke-WebRequest -Uri $librawUrl -OutFile $librawZip -UseBasicParsing
+        Expand-Archive -Path $librawZip -DestinationPath $DepDir -Force
+        Write-Success "libraw downloaded and extracted"
+    } catch {
+        Write-Warn "Failed to download libraw: $_"
+        Write-Host "Trying alternative approach..."
+        Create-ManualFallback
+        return
+    }
+
+    # Download libheif (this is trickier - it depends on libde265, aom, etc.)
+    Write-Host "Downloading libheif..."
+    $libheifUrl = "https://github.com/strukturag/libheif/releases/download/v1.18.2/libheif-1.18.2-msys2-x64.zip"
+    $libheifZip = "$env:TEMP\libheif.zip"
+
+    try {
+        Invoke-WebRequest -Uri $libheifUrl -OutFile $libheifZip -UseBasicParsing
+        Expand-Archive -Path $libheifZip -DestinationPath $DepDir -Force
+        Write-Success "libheif downloaded and extracted"
+    } catch {
+        Write-Warn "Failed to download libheif: $_"
+    }
+
+    # If direct downloads failed, try manual approach
+    if (-not (Test-Path (Join-Path $DepLib "libraw.a"))) {
+        Create-ManualFallback
+    }
+}
+
+function Create-ManualFallback {
+    Write-Step "Manual fallback - installing via MSYS2 shell"
+
+    # The MSYS2 CA bundle is corrupted. Try to fix it first by downloading a fresh one
+    $caBundleUrl = "https://curl.se/ca/cacert.pem"
+    $caBundleDest = "$MSYS2_ROOT\usr\ssl\certs\ca-bundle.crt"
+    $caBundleBackup = "$MSYS2_ROOT\usr\ssl\certs\ca-bundle.crt.bak"
+
+    Write-Host "Attempting to fix MSYS2 CA certificates..."
+
+    try {
+        # Backup corrupted file
+        if (Test-Path $caBundleDest) {
+            Copy-Item -Path $caBundleDest -Destination $caBundleBackup -Force
+        }
+
+        # Download proper CA bundle
+        Invoke-WebRequest -Uri $caBundleUrl -OutFile $caBundleDest -UseBasicParsing
+        Write-Success "CA bundle fixed"
+
+        # Now retry pacman
+        $pacman = Join-Path $MSYS2_ROOT "usr\bin\pacman.exe"
+        $env:MSYSTEM = "MINGW64"
+        $env:PATH = "$MINGW64_BIN;$($MSYS2_ROOT)\usr\bin;$env:PATH"
+
+        Write-Host "Retrying pacman sync..."
+        & $pacman -Sy
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Installing packages..."
+            & $pacman -S --noconfirm $RequiredPackages
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Packages installed via pacman"
+                Copy-DependenciesFromMSYS2
+                return
+            }
+        }
+    } catch {
+        Write-Warn "Could not fix CA bundle: $_"
+    }
+
+    # Last resort: use prebuilt binaries from nImage releases or document manual steps
+    Write-Warn "Automatic installation failed."
+    Write-Host ""
+    Write-Host "Manual installation required:"
+    Write-Host ""
+    Write-Host "Option 1: Fix MSYS2 CA certificates"
+    Write-Host "  1. Open MSYS2 MINGW64 terminal as Administrator"
+    Write-Host "  2. Run: pacman -Sy ca-certificates"
+    Write-Host "  3. Run: pacman -S mingw-w64-x86_64-libraw mingw-w64-x86_64-libheif"
+    Write-Host "  4. Re-run this script"
+    Write-Host ""
+    Write-Host "Option 2: Download and extract manually"
+    Write-Host "  1. Download LibRaw from https://www.libraw.org"
+    Write-Host "  2. Download libheif from https://github.com/strukturag/libheif"
+    Write-Host "  3. Extract headers to deps/include/"
+    Write-Host "  4. Extract libs to deps/lib/"
+    Write-Host ""
+    throw "Automatic installation failed. Please follow manual steps above."
+}
+
+function Copy-DependenciesFromMSYS2 {
     Write-Step "Copying dependencies to deps/"
 
     # Create directories
@@ -218,6 +346,14 @@ function Copy-Dependencies {
     }
 
     Write-Success "Dependencies copied to deps/"
+}
+
+# ============================================================================
+# Copy Dependencies (from MSYS2)
+# ============================================================================
+
+function Copy-Dependencies {
+    Copy-DependenciesFromMSYS2
 }
 
 # ============================================================================
@@ -301,11 +437,19 @@ function Main {
             Write-Success "MSYS2 found at $MSYS2_ROOT"
         }
 
-        # Package installation
-        Install-Packages
+        # Check if deps already exist in deps/
+        $depsLibExists = Test-Path (Join-Path $DepLib "libraw.a")
+        $depsBinExists = Test-Path (Join-Path $DepBin "libraw-24.dll")
 
-        # Copy dependencies
-        Copy-Dependencies
+        if ($depsLibExists -and $depsBinExists) {
+            Write-Success "Dependencies already present in deps/"
+        } else {
+            # Package installation
+            Install-Packages
+
+            # Copy dependencies
+            Copy-Dependencies
+        }
     } else {
         Write-Warn "Skipping MSYS2/package installation"
     }
