@@ -45,68 +45,55 @@ nImage provides:
 
 ## Installation
 
-### Quick Start (Windows with MSYS2)
+### One-Command Setup (Windows)
 
-```bash
+```powershell
+# Run as Administrator in PowerShell
 cd modules/nImage
-npm run setup   # Downloads dependencies from MSYS2
-npm run build   # Builds native module
-npm test        # Run tests
+.\scripts\setup.ps1
 ```
+
+This script will:
+1. Download and install MSYS2 (if not present)
+2. Install libraw and libheif packages
+3. Copy dependencies to `deps/`
+4. Build the native module
+5. Run tests
 
 ### Prerequisites
 
-**Windows: MSYS2** (recommended)
+- **Node.js 18+**
+- **Windows** with PowerShell (run as Administrator)
 
-Install MSYS2 from https://www.msys2.org/
+### If MSYS2 Already Installed
 
-In the MSYS2 MINGW64 terminal:
-```bash
-pacman -S mingw-w64-x86_64-libraw mingw-w64-x86_64-libheif
+If MSYS2 is already on your system, you can skip installation:
+
+```powershell
+.\scripts\setup.ps1 -SkipInstall
 ```
 
-Then return to regular Command Prompt/PowerShell and run:
-```bash
-npm run setup
-npm run build
-```
-
-**Linux:**
+### Linux
 
 ```bash
 sudo apt install libraw-dev libheif-dev
-npm run setup
+mkdir -p deps/include deps/lib deps/bin
+cp /usr/include/*.h deps/include/ 2>/dev/null || true
+cp /usr/lib/x86_64-linux-gnu/libraw* deps/lib/
+cp /usr/lib/x86_64-linux-gnu/libheif* deps/lib/
 npm run build
 ```
-
-### Manual Setup
-
-If not using MSYS2, download and install dependencies manually:
-
-```bash
-# Create deps structure
-mkdir -p deps/include deps/lib deps/bin
-
-# libraw: https://www.libraw.org/
-# Headers to: deps/include/
-# Libs to: deps/lib/
-
-# libheif: https://github.com/strukturag/libheif
-# Headers to: deps/include/
-# Libs to: deps/lib/
-```
-
-Then: `npm run build`
 
 ## Build Commands
 
 | Command | Description |
 |---------|-------------|
-| `npm run setup` | Download/vendor dependencies |
-| `npm run build` | Build native module (uses MSYS2 MinGW on Windows) |
+| `.\scripts\setup.ps1` | Full setup: install MSYS2, deps, build, test (Windows) |
+| `.\scripts\setup.ps1 -SkipInstall` | Only build (deps already present) |
+| `npm run setup:deps` | Only install dependencies, don't build |
+| `npm run build` | Build native module |
 | `npm run build:debug` | Build with debug symbols |
-| `npm run build:msvc` | Build with MSVC (if you have vcpkg deps) |
-| `npm test` | Run tests (works without native build) |
+| `npm test` | Run tests |
 
 ## API
 

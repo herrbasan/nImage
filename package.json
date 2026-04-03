@@ -10,14 +10,10 @@
     "deps/win/bin/*.dll"
   ],
   "scripts": {
-    "install": "node scripts/vendor.js --install",
-    "setup": "node scripts/vendor.js",
-    "configure": "node-gyp configure --compiler=mingw",
-    "build": "npm run setup && node scripts/build.js",
+    "setup": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
+    "setup:deps": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1 -SkipBuild",
+    "build": "node scripts/build.js",
     "build:debug": "node scripts/build.js --debug",
-    "build:msvc": "npm run setup && node-gyp configure && node-gyp build",
-    "rebuild": "node-gyp rebuild",
-    "clean": "node-gyp clean",
     "test": "node test/index.test.js",
     "package": "node scripts/package-binary.js",
     "prepublishOnly": "npm run build && npm run package"
