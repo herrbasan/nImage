@@ -164,10 +164,35 @@ function Install-Packages {
     $syncResult = & $pacman -Sy 2>&1
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Warn "Pacman sync failed (likely SSL/certificate issue with MSYS2)"
-        Write-Host "Falling back to direct binary download..."
-        Download-DirectBinaries
-        return
+        Write-Warn "Pacman sync failed - attempting to fix CA certificates..."
+
+        # Try to fix corrupted CA bundle
+        $caBundleDest = "$MSYS2_ROOT\usr\ssl\certs\ca-bundle.crt"
+
+        if (Test-Path $caBundleDest) {
+            # Check if CA bundle is corrupted (should be > 10KB, not "404 Not Found")
+            $caContent = Get-Content $caBundleDest -Raw -ErrorAction SilentlyContinue
+            if ($caContent -and $caContent.Length -lt 1000) {
+                Write-Host "CA bundle appears corrupted, attempting to fix..."
+                try {
+                    Invoke-WebRequest -Uri "https://curl.se/ca/cacert.pem" -OutFile $caBundleDest -UseBasicParsing
+                    Write-Success "CA bundle fixed"
+                } catch {
+                    Write-Warn "Could not download CA bundle: $_"
+                }
+            }
+        }
+
+        # Retry pacman sync
+        Write-Host "Retrying pacman sync..."
+        $syncResult = & $pacman -Sy 2>&1
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "Pacman sync still failing after CA fix"
+            Write-Host "Falling back to direct binary download..."
+            Download-DirectBinaries
+            return
+        }
     }
 
     # Install missing packages
