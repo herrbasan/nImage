@@ -113,8 +113,9 @@ async function checkMSYS2Packages(msysRoot) {
 
     let installedPkgs;
     try {
+        // pacman -Q without args lists all installed packages (format: "name version")
         installedPkgs = execSync(
-            `"${pacmanBin}" -Q --machinereadable`,
+            `"${pacmanBin}" -Q`,
             { env, encoding: 'utf8', windowsHide: true }
         );
     } catch (e) {
@@ -123,8 +124,12 @@ async function checkMSYS2Packages(msysRoot) {
 
     const pkgMap = {};
     for (const line of installedPkgs.trim().split('\n')) {
-        const [name, version] = line.split('\t');
-        if (name && version) pkgMap[name] = version;
+        const parts = line.split(' ');
+        if (parts.length >= 2) {
+            const name = parts[0];
+            const version = parts[1];
+            pkgMap[name] = version;
+        }
     }
 
     const missing = [];
