@@ -2,6 +2,8 @@
 
 **Last Updated**: 2026-04-03
 
+**Version**: 2.0.0 - Sharp integration complete
+
 ## Overview
 
 nImage is a native Node.js module (NAPI) for high-performance image processing. It provides:
@@ -11,24 +13,52 @@ nImage is a native Node.js module (NAPI) for high-performance image processing. 
 
 ## Design Philosophy
 
-nImage is a **codec-first** module. It handles the native library complexity for exotic formats, then delegates transformation work to Sharp which is already optimized for common operations.
+nImage is a **Sharp-compatible API wrapper** that adds native codec support for formats Sharp cannot handle directly. The pipeline is:
+
+```
+User calls nImage API (Sharp-compatible)
+         │
+         ▼
+┌─────────────────────────────────────────┐
+│              nImage                       │
+│                                          │
+│  1. Detect input format                   │
+│  2. If RAW/HEIC → decode to RGB via NAPI  │
+│  3. Pass RGB buffer to Sharp              │
+│  4. Sharp handles all transforms/encode   │
+│  5. Return result to user                 │
+└─────────────────────────────────────────┘
+```
+
+**Sharp is the main show** for transformations and encoding. nImage exists to bridge the gap for RAW and HEIC formats that Sharp cannot decode natively.
+
+### Why This Architecture?
+
+- **Sharp is already excellent** at transforms and common format encoding (JPEG, PNG, WebP, AVIF)
+- **Native codecs are complex**: RAW demosaicing and HEIC decoding require specialized libraries (libraw, libheif)
+- **Single API surface**: Users interact with nImage exactly as they would with Sharp, but gain RAW/HEIC support
+- **Maintainability**: Sharp's libvips-based pipeline is well-tested; we only maintain the exotic codec integration
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         nImage Module                            │
 │                                                                  │
-│  Input              Decode           Transform        Encode      │
-│  ──────            ──────           ─────────        ─────       │
-│  RAW ─────────────► RGB/RGBA ──────► Sharp ◄──────── PNG        │
-│  HEIC ────────────►              ──►        ───────► JPEG       │
-│  HEIF                                              ──► WebP      │
-│  JPEG ◄──────────────────────────────────────────────► AVIF      │
-│  PNG                                                 (via Sharp) │
-│  WebP                                                (via Sharp) │
-│  TIFF                                               (via Sharp) │
+│  Input              nImage处理          Sharp处理         Output   │
+│  ──────            ───────           ─────────        ─────     │
+│  RAW ─────────────► [Decode] ────────► [Transform] ──► JPEG     │
+│  HEIC ───────────►              ────► [Resize]  ────► PNG      │
+│  HEIF                             ───► [Crop]   ────► WebP     │
+│  JPEG ────────────────────────────────────────────► AVIF       │
+│  PNG  ────────────────────────────────────────────► (any)       │
+│  WebP ────────────────────────────────────────────► (any)      │
+│  TIFF ────────────────────────────────────────────► (any)      │
 └─────────────────────────────────────────────────────────────────┘
 
-Legend: ──► native    ──► Sharp (libvips)
+nImage处理: libraw/libheif decoding to RGB/RGBA
+Sharp处理: All transformations and format encoding
+
+User-facing API is Sharp-compatible. RAW/HEIC are transparently decoded
+by nImage's native codecs, then passed to Sharp for the pipeline.
 ```
 
 ## Module Structure
@@ -78,19 +108,23 @@ nImage/
 | HEIC | libheif | ✅ Working | RGB/RGBA |
 | HEIF | libheif | ✅ Working | RGB/RGBA |
 | AVIF | libheif+aom | ✅ Working | RGB/RGBA |
-| JPEG | libjpeg | ⬜ Future | RGB |
-| PNG | libpng | ⬜ Future | RGB/RGBA |
-| WebP | libwebp | ⬜ Future | RGB/RGBA |
-| TIFF | libtiff | ⬜ Future | RGB/RGBA |
+| JPEG | Sharp | ✅ Working | RGB |
+| PNG | Sharp | ✅ Working | RGB/RGBA |
+| WebP | Sharp | ✅ Working | RGB/RGBA |
+| TIFF | Sharp | ✅ Working | RGB/RGBA |
+| GIF | Sharp | ✅ Working | RGB/RGBA |
 
 ### Output Formats (Encoding)
 
+All output encoding is handled by Sharp's libvips pipeline.
+
 | Format | Library | Status | Notes |
 |--------|---------|--------|-------|
-| JPEG | libjpeg | 🔲 TODO | Baseline encoding |
-| PNG | libpng | 🔲 TODO | With compression levels |
-| WebP | libwebp | 🔲 TODO | Lossy/Lossless |
-| AVIF | libaom | 🔲 TODO | Via Sharp initially |
+| JPEG | Sharp | ✅ Working | Quality 1-100 |
+| PNG | Sharp | ✅ Working | Compression levels |
+| WebP | Sharp | ✅ Working | Lossy/Lossless |
+| AVIF | Sharp | ✅ Working | Quality 1-100 |
+| TIFF | Sharp | ✅ Working | Compression |
 
 ## Data Structures
 
@@ -163,13 +197,32 @@ struct EncoderOptions {
 
 ### JavaScript API
 
+nImage presents a **Sharp-compatible API**. Internally it uses Sharp for transforms and encoding, but adds RAW/HEIC support by decoding those formats first.
+
 ```javascript
 const nImage = require('nimage');
+
+// Sharp-compatible pipeline (nImage handles RAW/HEIC internally)
+const result = await nImage('photo.cr2')  // RAW file
+    .resize(1024, 1024, { fit: 'inside' })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
+// Same API for HEIC
+const result = await nImage('image.heic')
+    .rotate(90)
+    .webp({ quality: 80 })
+    .toBuffer();
+
+// Standard formats work directly through Sharp
+const result = await nImage('photo.jpg')
+    .resize(800, 600)
+    .toBuffer();
 
 // Detection (always available - pure JS)
 nImage.detectFormat(buffer) → { format, confidence, mimeType }
 
-// Decoding
+// Low-level decode (when you need raw pixel access)
 nImage.decode(buffer, [formatHint]) → ImageData
 decoder.decode(buffer) → ImageData
 
@@ -187,37 +240,39 @@ const encoder = new nImage.ImageEncoder('jpeg')
 encoder.encode(rgbBuffer, width, height, channels, options) → Buffer
 ```
 
-### Usage Example
+### Usage Examples
 
 ```javascript
 const nImage = require('nimage');
+
+// Pipeline with RAW input - nImage handles decoding transparently
+const thumb = await nImage('photo.cr2')
+    .resize(256, 256, { fit: 'cover' })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+
+// Pipeline with HEIC input
+const optimized = await nImage('image.heic')
+    .resize(1920, 1080, { fit: 'inside' })
+    .webp({ quality: 85 })
+    .toBuffer();
+
+// Low-level: Decode RAW to get raw RGB for custom processing
+const imageData = nImage.decode(fs.readFileSync('photo.cr2'));
+console.log(imageData.width, imageData.height);  // 6000, 4000
+
+// Then pass to Sharp manually if needed
 const sharp = require('sharp');
-
-// Process a RAW file
-const rawBuffer = fs.readFileSync('photo.cr2');
-const imageData = nImage.decode(rawBuffer);
-
-// Transform with Sharp
 const transformed = await sharp(Buffer.from(imageData.data), {
     raw: {
         width: imageData.width,
         height: imageData.height,
-        channels: imageData.channels
+        channels: imageData.channels  // 3=RGB, 4=RGBA
     }
 })
-.resize(1024, 1024, { fit: 'inside' })
-.jpeg({ quality: 85 })
+.resize(1024, 1024)
+.jpeg()
 .toBuffer();
-
-// Or use nImage encoder directly
-const jpegBuffer = nImage.encode(
-    imageData.data,
-    imageData.width,
-    imageData.height,
-    imageData.channels,
-    'jpeg',
-    { quality: 85 }
-);
 ```
 
 ## Pipeline Integration

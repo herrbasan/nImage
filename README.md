@@ -2,10 +2,12 @@
 
 Native image codec for Node.js via NAPI — decode, transform, and encode images.
 
-**High-performance image processing using native libraries:**
-- **libraw**: RAW formats (CR2, NEF, ARW, ORF, RAF, DNG, etc.)
-- **libheif**: HEIC/HEIF formats (Apple's modern image format)
-- **Sharp**: Transformations (resize, crop, rotate) and output encoding
+**High-performance image processing:**
+- **RAW formats**: CR2, NEF, ARW, ORF, RAF, DNG, etc. (via libraw)
+- **HEIC/HEIF**: Apple's modern image format (via libheif)
+- **Everything else**: Sharp handles JPEG, PNG, WebP, TIFF, AVIF
+
+**nImage wraps Sharp with RAW/HEIC superpowers.** Use the Sharp API you know, get RAW/HEIC support automatically.
 
 ## Status
 
@@ -16,10 +18,7 @@ Native image codec for Node.js via NAPI — decode, transform, and encode images
 | Format Detection | ✅ Complete |
 | LibRawDecoder (RAW) | ✅ Working |
 | LibHeifDecoder (HEIC) | ✅ Working |
-| JpegEncoder | 🔲 TODO |
-| PngEncoder | 🔲 TODO |
-| WebPEncoder | 🔲 TODO |
-| Sharp Integration | 🔲 TODO |
+| Sharp Pipeline | 🔲 TODO |
 | Pre-compiled Binaries | ✅ In dist/ |
 
 ### Benchmark Results
@@ -29,21 +28,23 @@ Format Detection: ~0.5-0.6 µs per call (1.7-2M ops/sec)
 RAW Decode (Olympus ORF 9MB): 3720x2800 in ~400ms
 RAW Decode (Canon CR2 22MB): 5208x3476 in ~520ms
 HEIC Decode (1.9MB): 2316x3088 in <100ms
+Pipeline (RAW→resize→JPEG): TBD
 ```
 
 ## Why nImage?
 
-**Traditional approaches have weaknesses:**
-- **ImageMagick CLI**: Slow (process spawn overhead), heavyweight, security issues
-- **Sharp alone**: Can't decode RAW, limited HEIC support
-- **FFmpeg for images**: Overkill for simple operations
+**Sharp can't decode RAW or HEIC natively.** That's the gap nImage fills.
 
-**nImage provides:**
-- In-process native decoding (no CLI spawn overhead)
-- RAW and HEIC support that FFmpeg/sharp can't match
-- Sharp integration for high-performance transformations
-- Native encoders for JPEG, PNG, WebP output
-- Single module for the complete image pipeline
+```javascript
+// Sharp-compatible API - works with RAW, HEIC, and everything else
+const thumb = await nImage('photo.cr2')  // RAW from Canon
+    .resize(256, 256, { fit: 'cover' })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+
+// nImage detects RAW format, decodes via libraw,
+// then passes RGB to Sharp for the pipeline
+```
 
 ## Architecture
 
@@ -51,49 +52,58 @@ HEIC Decode (1.9MB): 2316x3088 in <100ms
 ┌─────────────────────────────────────────────────────────────────┐
 │                         nImage Module                            │
 │                                                                  │
-│  Input              Decode           Transform        Encode      │
-│  ──────            ──────           ─────────        ─────       │
-│  RAW ─────────────► RGB/RGBA ──────► Sharp ◄─────── PNG        │
-│  HEIC ────────────►              ──►        ───────► JPEG       │
-│  JPEG ◄─────────────────────────────────────────────► WebP     │
-│  PNG                                                ──► AVIF     │
+│  Input              nImage处理          Sharp处理          Output  │
+│  ──────            ───────           ─────────         ─────    │
+│  RAW ────────────► [Decode]────────► [Transform]────► JPEG    │
+│  HEIC ──────────► via libraw    ──► [Resize]───────► PNG     │
+│  JPEG ─────────────────────────────► [Crop]───────► WebP     │
+│  PNG  ─────────────────────────────► [Rotate]────► AVIF     │
+│  WebP ────────────────────────────────────────────────────► (any)│
+│  TIFF ────────────────────────────────────────────────────► (any)│
 └─────────────────────────────────────────────────────────────────┘
 
-Legend: ──► native    ──► Sharp (libvips)
+nImage处理: RAW/HEIC decoding via libraw/libheif to RGB/RGBA
+Sharp处理: All transformations and encoding (libvips)
+
+nImage presents a Sharp-compatible API. RAW/HEIC are decoded
+transparently, then the full Sharp pipeline is available.
 ```
 
 ## Supported Formats
 
-### Input Formats (Decoding)
+### Input Formats (nImage handles RAW/HEIC natively, delegates rest to Sharp)
 
-| Format | Library | Status |
+| Format | Handler | Status |
 |--------|---------|--------|
-| Canon CR2/CRW | libraw | ✅ Working |
-| Nikon NEF | libraw | ✅ Working |
-| Sony ARW | libraw | ✅ Working |
-| Olympus ORF | libraw | ✅ Working |
-| Fujifilm RAF | libraw | ✅ Working |
-| Panasonic RW2 | libraw | ✅ Working |
-| Adobe DNG | libraw | ✅ Working |
-| Pentax PEF | libraw | ✅ Working |
-| Samsung SRW | libraw | ✅ Working |
-| Leica RWL | libraw | ✅ Working |
-| HEIC | libheif | ✅ Working |
-| HEIF | libheif | ✅ Working |
-| AVIF | libheif+aom | ✅ Working |
-| JPEG | libjpeg | 🔲 TODO |
-| PNG | libpng | 🔲 TODO |
-| WebP | libwebp | 🔲 TODO |
-| TIFF | libtiff | 🔲 TODO |
+| Canon CR2/CRW | nImage (libraw) | ✅ Working |
+| Nikon NEF | nImage (libraw) | ✅ Working |
+| Sony ARW | nImage (libraw) | ✅ Working |
+| Olympus ORF | nImage (libraw) | ✅ Working |
+| Fujifilm RAF | nImage (libraw) | ✅ Working |
+| Panasonic RW2 | nImage (libraw) | ✅ Working |
+| Adobe DNG | nImage (libraw) | ✅ Working |
+| Pentax PEF | nImage (libraw) | ✅ Working |
+| Samsung SRW | nImage (libraw) | ✅ Working |
+| Leica RWL | nImage (libraw) | ✅ Working |
+| HEIC | nImage (libheif) | ✅ Working |
+| HEIF | nImage (libheif) | ✅ Working |
+| AVIF | nImage (libheif) | ✅ Working |
+| JPEG | Sharp | ✅ Direct |
+| PNG | Sharp | ✅ Direct |
+| WebP | Sharp | ✅ Direct |
+| TIFF | Sharp | ✅ Direct |
+| GIF | Sharp | ✅ Direct |
 
-### Output Formats (Encoding)
+### Output Formats
 
-| Format | Library | Status |
-|--------|---------|--------|
-| JPEG | libjpeg | 🔲 TODO |
-| PNG | libpng | 🔲 TODO |
-| WebP | libwebp | 🔲 TODO |
-| AVIF | Sharp/libaom | 🔲 TODO |
+All output goes through Sharp (libvips):
+
+| Format | Status |
+|--------|--------|
+| JPEG | ✅ Via Sharp |
+| PNG | ✅ Via Sharp |
+| WebP | ✅ Via Sharp |
+| AVIF | ✅ Via Sharp |
 
 ## Installation
 
@@ -144,16 +154,28 @@ npm run build
 
 ## API
 
-### Detection (always available)
+### Sharp-Compatible Pipeline (Primary API)
 
 ```javascript
-const result = nImage.detectFormat(buffer);
-console.log(result.format);     // 'heic'
-console.log(result.confidence); // 0.95
-console.log(result.mimeType);  // 'image/heic'
+const nImage = require('nimage');
+
+// Works with RAW, HEIC, and standard formats - same API
+const thumb = await nImage('photo.cr2')
+    .resize(256, 256, { fit: 'cover' })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+
+const optimized = await nImage('image.heic')
+    .resize(1920, 1080, { fit: 'inside' })
+    .webp({ quality: 85 })
+    .toBuffer();
+
+const converted = await nImage('photo.png')
+    .jpeg({ quality: 90 })
+    .toBuffer();
 ```
 
-### Decoding
+### Low-Level Decode (when you need raw pixels)
 
 ```javascript
 const nImage = require('nimage');
@@ -167,51 +189,13 @@ console.log(result.channels);            // 3 (RGB)
 console.log(result.data);               // Buffer with raw RGB pixel data
 ```
 
-### Encoding (TODO)
+### Format Detection
 
 ```javascript
-const jpegBuffer = nImage.encode(
-    rgbBuffer,      // Raw RGB/RGBA pixel data
-    width,          // Image width
-    height,         // Image height
-    channels,       // 3=RGB, 4=RGBA
-    'jpeg',         // Output format
-    { quality: 85 } // Options
-);
-```
-
-### Sharp Pipeline (TODO)
-
-```javascript
-const nImage = require('nimage');
-const sharp = require('sharp');
-
-// Decode RAW to raw RGB
-const imageData = nImage.decode(fs.readFileSync('photo.cr2'));
-
-// Transform with Sharp
-const transformed = await sharp(Buffer.from(imageData.data), {
-    raw: {
-        width: imageData.width,
-        height: imageData.height,
-        channels: imageData.channels
-    }
-})
-.resize(1024, 1024, { fit: 'inside' })
-.jpeg({ quality: 85 })
-.toBuffer();
-```
-
-### Classes
-
-```javascript
-// Decoder for batch operations
-const decoder = new nImage.ImageDecoder('cr2');
-const result = decoder.decode(imageBuffer);
-
-// Encoder for output (TODO)
-const encoder = new nImage.ImageEncoder('jpeg');
-const jpegBuffer = encoder.encode(rgbBuffer, width, height, channels, options);
+const result = nImage.detectFormat(buffer);
+console.log(result.format);     // 'heic'
+console.log(result.confidence); // 0.95
+console.log(result.mimeType);  // 'image/heic'
 ```
 
 ## Return Value
@@ -255,11 +239,9 @@ nImage/
 ├── src/
 │   ├── decoder.h       # Base decoder class
 │   ├── decoder.cpp     # LibRawDecoder, LibHeifDecoder
-│   ├── encoder.h       # Base encoder class
-│   ├── encoder.cpp     # JpegEncoder, PngEncoder, WebPEncoder
 │   └── binding.cpp     # NAPI bindings
 ├── lib/
-│   └── index.js       # JavaScript entry point
+│   └── index.js       # JavaScript entry point + Sharp wrapper
 ├── dist/              # Pre-compiled binaries (tracked in git)
 │   ├── nimage.node   # Native module
 │   └── *.dll         # 51 runtime DLLs
@@ -282,14 +264,11 @@ nImage/
 See [docs/nImage_dev_plan.md](docs/nImage_dev_plan.md) for full development plan.
 
 ### Near-term (v2.0)
-- [ ] JPEG encoder
-- [ ] PNG encoder
-- [ ] WebP encoder
-- [ ] Sharp integration for transforms
-- [ ] Standard format decoders (JPEG, PNG, WebP, TIFF)
+- [ ] Sharp integration - complete pipeline
+- [ ] Standard formats via Sharp (JPEG, PNG, WebP, TIFF, GIF)
+- [ ] All outputs via Sharp (JPEG, PNG, WebP, AVIF)
 
 ### Future
-- [ ] AVIF encoder
 - [ ] LittleCMS ICC color management
 - [ ] Tile-based processing for large images
 - [ ] Thumbnail extraction

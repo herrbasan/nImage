@@ -155,3 +155,7 @@ vcpkg_installed/
 *.exp
 *.lib
 *.pdb
+
+# Folders
+test/assets
+test/converted

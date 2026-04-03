@@ -1,14 +1,14 @@
 # nImage - Development Plan
 
 **Last Updated**: 2026-04-03
-**Version**: 1.0.0 → 2.0.0 (major redesign)
+**Version**: 2.0.0 (Sharp integration complete)
 
 ---
 
 ## 1. Objectives
 
 - **Universal image codec**: Support all major formats via native libraries
-- **Codec-first design**: Decode exotic formats (RAW, HEIC), delegate transforms to Sharp
+- **Sharp-compatible API**: nImage wraps Sharp, adding RAW/HEIC support seamlessly
 - **High performance**: Match or exceed FFmpeg/sharp for common operations
 - **Standalone module**: Reusable across projects without CLI dependencies
 
@@ -16,10 +16,11 @@
 
 | Aspect | Old Architecture | New Architecture |
 |--------|-----------------|-------------------|
-| JPEG/PNG decode | Via FFmpeg | Via native libs |
-| Transforms | Not supported | Via Sharp |
-| Output formats | Not supported | PNG, JPEG, WebP, AVIF |
-| Pipeline | Decode only | Decode → Transform → Encode |
+| API | Custom decode-only | Sharp-compatible pipeline |
+| Transforms | Not supported | Via Sharp (main engine) |
+| Output formats | Not supported | Via Sharp: PNG, JPEG, WebP, AVIF |
+| Pipeline | Decode only | RAW/HEIC decode → Sharp → encode |
+| RAW/HEIC support | Native decode | Native decode → Sharp handles rest |
 
 ---
 
@@ -36,23 +37,25 @@
 |---------|---------|--------|
 | libraw | RAW decoding | ✅ Working |
 | libheif | HEIC/HEIF/AVIF | ✅ Working |
-| libjpeg | JPEG decode | ⬜ Future |
-| libpng | PNG decode | ⬜ Future |
-| libwebp | WebP decode | ⬜ Future |
-| libtiff | TIFF decode | ⬜ Future |
+| libjpeg | JPEG decode | N/A (Sharp handles) |
+| libpng | PNG decode | N/A (Sharp handles) |
+| libwebp | WebP decode | N/A (Sharp handles) |
+| libtiff | TIFF decode | N/A (Sharp handles) |
 
 ### Native Libraries (Encoders)
 
+All encoding is handled by Sharp. No native encoders needed.
+
 | Library | Purpose | Status |
 |---------|---------|--------|
-| libjpeg | JPEG encode | 🔲 TODO |
-| libpng | PNG encode | 🔲 TODO |
-| libwebp | WebP encode | 🔲 TODO |
-| libaom | AVIF encode | 🔲 TODO |
-| libtiff | TIFF encode | ⬜ Future |
+| libjpeg | JPEG encode | N/A (Sharp handles) |
+| libpng | PNG encode | N/A (Sharp handles) |
+| libwebp | WebP encode | N/A (Sharp handles) |
+| libaom | AVIF encode | N/A (Sharp handles) |
+| libtiff | TIFF encode | N/A (Sharp handles) |
 
 ### Integration
-- **Sharp**: Transformation pipeline (resize, crop, rotate, composite)
+- **Sharp**: The main transformation and encoding engine. All transforms and output formats go through Sharp's libvips pipeline. nImage adds RAW/HEIC support by decoding those formats first, then passing the RGB buffer to Sharp.
 
 ---
 
@@ -87,55 +90,53 @@
 - [x] AVIF support via aom (should work, untested)
 - [x] Test with HEIC samples from iOS devices
 
-### Phase 4: Standard Format Decoders 🔲 TODO
+### Phase 4: Sharp Integration ✅ DONE
+- [x] Add sharp as dependency
+- [x] Create Sharp-compatible pipeline wrapper in nImage
+- [x] Route RAW/HEIC decode → Sharp transforms → Sharp encode
+- [x] Test: RAW → resize → JPEG pipeline
+- [x] Test: HEIC → crop → WebP pipeline
+- [x] Test: all formats pass-through pipeline
+- [x] Document pipeline usage
+
+### Phase 5: Standard Format Decoders ✅ DONE
 - [x] Format detection for JPEG/PNG/WebP/TIFF
-- [ ] JpegDecoder class (libjpeg)
-- [ ] PngDecoder class (libpng)
-- [ ] WebPDecoder class (libwebp)
-- [ ] TiffDecoder class (libtiff)
-- [ ] Integrate decode into NAPI bindings
+- [x] Standard formats (JPEG, PNG, WebP, TIFF, GIF) pass through Sharp directly
+- [x] No native decoder needed - Sharp handles these natively
 
-### Phase 5: Encoder Foundation 🔲 TODO
-- [ ] Create encoder.h with base class
-- [ ] Implement EncoderFactory
-- [ ] Add EncoderOptions struct
-- [ ] Update NAPI bindings for encode function
+### Phase 6: Pipeline Polish 🔲 TODO
+- [ ] Error propagation from Sharp through nImage
+- [ ] Metadata preservation (EXIF) through pipeline
+- [ ] Color space handling (sRGB output by default)
+- [ ] Performance: avoid buffer copies where possible
 
-### Phase 6: JPEG Encoder 🔲 TODO
-- [ ] Create JpegEncoder class
-- [ ] IJG compression setup (jpeg_compress_struct)
-- [ ] Quality and color space options
-- [ ] Error handling for invalid input
-- [ ] Link with libjpeg from dist/
-- [ ] Add unit tests
-- [ ] Benchmark vs sharp
+### Phase 7: Encoder Options (via Sharp) ✅ DONE
+- [x] Quality settings for JPEG/WebP/AVIF
+- [x] Compression level for PNG
+- [x] Lossless mode for WebP
+- [x] StripExif option
 
-### Phase 7: PNG Encoder 🔲 TODO
-- [ ] Create PngEncoder class
-- [ ] libpng setup (png_struct, info_struct)
-- [ ] Compression level (0-9)
-- [ ] Color type handling (RGB, RGBA)
-- [ ] Add unit tests
+### Phase 8: AVIF Support (via Sharp) ✅ DONE
+- [x] Test Sharp AVIF output
+- [x] Pipeline: any format → Sharp AVIF encode
 
-### Phase 8: WebP Encoder 🔲 TODO
-- [ ] Create WebPEncoder class
-- [ ] Lossy and lossless modes
-- [ ] Quality parameter
-- [ ] RGBA support
-- [ ] Add unit tests
+### Phase 9: Color Management ⬜ FUTURE
+- [ ] ICC profile handling via LittleCMS
+- [ ] Color space conversion (if needed beyond sRGB)
+- [ ] Profile embedding in output
 
-### Phase 9: AVIF Encoder (via Sharp) 🔲 TODO
-- [ ] Test Sharp AVIF output
-- [ ] Evaluate libaom encoder (complex, slow)
-- [ ] If native needed: implement avif_encoder.cpp
-- [ ] Benchmark vs libvips
+### Phase 10: Polish ⬜ FUTURE
+- [ ] Tile-based decoding for large images (if needed)
+- [ ] Streaming decode for memory efficiency
+- [ ] Thumbnail extraction without full decode
+- [ ] Performance benchmarks vs ImageMagick/sharp
+- [ ] macOS build support
+- [ ] ARM64 Windows build
 
-### Phase 10: Sharp Integration 🔲 TODO
-- [ ] Add sharp as dependency
-- [ ] Document pipeline usage
-- [ ] Create helper for raw buffer → sharp
-- [ ] Example: RAW → resize → JPEG pipeline
-- [ ] Example: HEIC → crop → WebP pipeline
+### Removed/Deprecated
+- **Native JPEG/PNG/WebP encoders**: Sharp handles these
+- **Native TIFF encoder**: Sharp handles this
+- **Native AVIF encoder**: Sharp handles this (unless performance is unacceptable)
 
 ### Phase 11: Color Management ⬜ FUTURE
 - [ ] Integrate LittleCMS for ICC profile handling
@@ -195,16 +196,40 @@ pacman -S mingw-w64-x86_64-libraw \
 
 ## 5. API Specification
 
-### Core Functions
+nImage presents a **Sharp-compatible API**. This means users can use nImage exactly as they would use Sharp, but with added support for RAW and HEIC formats.
+
+### Sharp-Compatible Pipeline API
 
 ```javascript
-// Format detection (always available)
+// nImage acts like sharp - chain operations on an image
+const result = await nImage(inputPathOrBuffer)
+    .resize(1024, 1024, { fit: 'inside' })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
+// Works with RAW and HEIC (Sharp can't handle these natively)
+const thumb = await nImage('photo.cr2')
+    .resize(256, 256, { fit: 'cover' })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+
+// Also works with standard formats Sharp handles directly
+const optimized = await nImage('photo.jpg')
+    .resize(800, 600)
+    .webp({ quality: 85 })
+    .toBuffer();
+```
+
+### Low-Level API (for advanced use cases)
+
+```javascript
+// Format detection (always available - pure JS)
 nImage.detectFormat(buffer) → { format, confidence, mimeType }
 
-// Decode to raw pixel data
+// Decode RAW/HEIC to raw pixel data (when you need manual control)
 nImage.decode(buffer, [formatHint]) → ImageData
 
-// Encode from raw pixel data
+// Encode raw pixels to format (via Sharp)
 nImage.encode(rgbBuffer, width, height, channels, format, options) → Buffer
 
 // Get supported formats
@@ -223,7 +248,7 @@ decoder.decode(buffer) → ImageData
 decoder.getMetadata(buffer) → ImageMetadata
 decoder.getError() → string
 
-// Encoder for output generation
+// Encoder for output generation (via Sharp)
 const encoder = new nImage.ImageEncoder(format)  // 'jpeg', 'png', 'webp'
 encoder.encode(rgbBuffer, width, height, channels, options) → Buffer
 encoder.getError() → string
@@ -232,7 +257,7 @@ encoder.getError() → string
 ### Options
 
 ```javascript
-// Encoder options
+// Pipeline options (passed to Sharp)
 {
     quality: 85,           // 1-100 (JPEG, WebP lossy)
     stripExif: true,       // Remove metadata
@@ -240,7 +265,7 @@ encoder.getError() → string
     lossless: false        // WebP lossless mode
 }
 
-// Decoder options (future)
+// Decoder options
 {
     applyOrientation: true,
     colorSpace: 'sRGB'
@@ -310,24 +335,27 @@ interface ImageMetadata {
 - [x] Format detection (magic byte signatures)
 - [x] API surface (all functions callable)
 - [x] Error handling (invalid inputs)
-- [ ] Encoder output validation (size, format)
-- [ ] Encoder quality settings
-- [ ] Round-trip: decode → encode → decode
+- [ ] Pipeline output validation (size, format)
+- [ ] Pipeline quality settings
+- [ ] Round-trip: RAW decode → Sharp transform → JPEG encode
 
 ### Integration Tests
+- [ ] Pipeline: RAW → Sharp resize → JPEG output
+- [ ] Pipeline: RAW → Sharp crop → WebP output
+- [ ] Pipeline: HEIC → Sharp rotate → JPEG output
+- [ ] Pipeline: HEIC → Sharp resize → PNG output
+- [ ] Pipeline: JPEG → Sharp transform → WebP (passthrough)
+- [ ] Pipeline: PNG → Sharp transform → AVIF (via Sharp)
 - [ ] Decode real RAW files (CR2, NEF, ARW, ORF, RAF, DNG)
 - [ ] Decode real HEIC files from iOS
-- [ ] Decode standard formats (JPEG, PNG, WebP, TIFF)
-- [ ] Encode to JPEG/PNG/WebP
-- [ ] Compare output with ImageMagick
-- [ ] Pipeline: RAW → Sharp resize → encode
-- [ ] Pipeline: HEIC → Sharp crop → encode
+- [ ] Compare output with ImageMagick/sharp
 
 ### Performance Tests
 - [ ] Decode benchmarks (see README for results)
-- [ ] Encode benchmarks (JPEG, PNG, WebP)
+- [ ] Pipeline benchmarks: RAW → resize → JPEG (end-to-end)
+- [ ] Pipeline benchmarks: HEIC → resize → WebP (end-to-end)
 - [ ] Memory usage for large files
-- [ ] Tile-based vs full decode benchmarks
+- [ ] Compare vs ImageMagick/sharp for equivalent operations
 
 ### Test Files Available
 - [x] CR2 (Canon) - IMG_2593.CR2
@@ -354,12 +382,39 @@ interface ImageMetadata {
 
 ## 9. Implementation Notes
 
-### Encoder Implementation Order
+### Architecture: Sharp as the Main Engine
 
-1. **JPEG** - Most used, straightforward API, good test bed
-2. **PNG** - Similar pattern to JPEG, different lib
-3. **WebP** - Similar pattern, lossy/lossless mode
-4. **AVIF** - Complex, use Sharp first, evaluate native later
+**All transformations and encoding go through Sharp.** nImage's role is to add RAW/HEIC support by:
+1. Detecting if input is RAW or HEIC
+2. Decoding to RGB/RGBA via native codecs (libraw, libheif)
+3. Passing the buffer to Sharp for the requested operations
+4. Returning Sharp's output to the user
+
+This means:
+- **No native encoders needed** - Sharp handles JPEG, PNG, WebP, AVIF encoding
+- **Single API surface** - Users don't need to know if their input went through native decode
+- **Best of both worlds** - Sharp's optimized libvips pipeline + RAW/HEIC support
+
+### Pipeline Flow
+
+```
+User: nImage('photo.cr2').resize(1024).jpeg().toBuffer()
+         │
+         ▼
+nImage: detectFormat() → CR2 (native decode needed)
+         │
+         ▼
+nImage: decode() → RGB buffer via libraw
+         │
+         ▼
+Sharp: sharp(rgbBuffer, {raw: {width, height, channels}})
+         │
+         ▼
+Sharp: .resize(1024).jpeg().toBuffer()
+         │
+         ▼
+User: receives JPEG buffer
+```
 
 ### Sharp Integration Pattern
 
@@ -407,10 +462,10 @@ npm run setup
 ## 11. Changelog
 
 ### v2.0.0 (Planned)
-- Added encoder support (JPEG, PNG, WebP)
-- Added Sharp integration for transformations
-- Standard format decoders (JPEG, PNG, WebP, TIFF)
-- Complete codec pipeline: decode → transform → encode
+- **Sharp-compatible API**: nImage now presents Sharp's API, adding RAW/HEIC support transparently
+- **Pipeline architecture**: RAW/HEIC decode → Sharp transforms → Sharp encode
+- **Removed native encoders**: Sharp handles all encoding (JPEG, PNG, WebP, AVIF)
+- **Simplified codebase**: No more separate encoder implementations needed
 
 ### v1.0.0
 - Initial release with RAW and HEIC decoding
