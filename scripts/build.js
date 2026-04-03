@@ -2,45 +2,65 @@
  * Build script for nImage with MSYS2/MinGW support
  *
  * This script handles building the native addon using MSYS2's MinGW compiler,
- * which is necessary when using prebuilt libraries from MSYS2.
+ * bypassing node-gyp which doesn't properly support MinGW on Windows.
  *
  * Run: node scripts/build.js
  */
 
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
 const MSYS2_ROOT = 'C:\\msys64';
 const MINGW64_BIN = path.join(MSYS2_ROOT, 'mingw64', 'bin');
+const MSYS2_BASH = path.join(MSYS2_ROOT, 'usr', 'bin', 'bash.exe');
 const MODULE_ROOT = path.join(__dirname, '..');
+const BUILD_DIR = path.join(MODULE_ROOT, 'build', 'Release');
+
+// Find Node.js headers from node-gyp cache
+function getNodeHeadersPath() {
+    const nodeVersion = process.versions.node;
+    const cacheBase = path.join(os.homedir(), 'AppData', 'Local', 'node-gyp', 'Cache');
+    const nodeIncludePath = path.join(cacheBase, `${nodeVersion}.0`, 'include', 'node');
+    if (fs.existsSync(nodeIncludePath)) {
+        return nodeIncludePath;
+    }
+    // Try to find any available version
+    if (fs.existsSync(cacheBase)) {
+        const dirs = fs.readdirSync(cacheBase).filter(d => d.match(/^\d+\.\d+\.\d+$/));
+        if (dirs.length > 0) {
+            const latest = dirs.sort().reverse()[0];
+            return path.join(cacheBase, latest, 'include', 'node');
+        }
+    }
+    return null;
+}
+
+const NODE_HEADERS_PATH = getNodeHeadersPath();
 
 console.log('nImage Build Script');
 console.log('====================\n');
 
 // Check for MSYS2
 if (!fs.existsSync(MSYS2_ROOT)) {
-    console.error('✗ MSYS2 not found at C:\\msys64');
+    console.error('MSYS2 not found at C:\\msys64');
     console.error('Please install MSYS2 from https://www.msys2.org/');
-    console.error('Then run: node scripts/vendor.js to setup dependencies');
     process.exit(1);
 }
 
 if (!fs.existsSync(MINGW64_BIN)) {
-    console.error(`✗ MSYS2 mingw64 not found at ${MINGW64_BIN}`);
+    console.error(`MSYS2 mingw64 not found at ${MINGW64_BIN}`);
     process.exit(1);
 }
 
 // Check if deps are set up
-const depsInclude = path.join(MODULE_ROOT, 'deps', 'include');
 const depsLib = path.join(MODULE_ROOT, 'deps', 'lib');
 if (!fs.existsSync(path.join(depsLib, 'libraw.dll.a')) &&
     !fs.existsSync(path.join(depsLib, 'libraw.a'))) {
-    console.warn('⚠ Dependencies may not be set up. Run: node scripts/vendor.js first.');
+    console.warn('Dependencies may not be set up. Run: node scripts/setup.ps1 -SkipBuild first.');
 }
 
-// Build function
 async function build() {
     const args = process.argv.slice(2);
     const isDebug = args.includes('--debug');
@@ -54,9 +74,6 @@ async function build() {
         MSYS2_ARG_CONV_EXCL_N: '*',
     };
 
-    // Ensure we're using Windows-style paths for node-gyp
-    const moduleRootWin = MODULE_ROOT.replace(/\//g, '\\');
-
     console.log(`Build mode: ${isDebug ? 'debug' : 'release'}`);
     console.log(`Using MSYS2: ${MSYS2_ROOT}`);
     console.log(`Module root: ${MODULE_ROOT}\n`);
@@ -64,52 +81,120 @@ async function build() {
     // Clean if requested
     if (cleanFirst) {
         console.log('--- Cleaning build ---');
-        await run('node', ['node-gyp', 'clean'], { env });
+        if (fs.existsSync(BUILD_DIR)) {
+            fs.rmSync(BUILD_DIR, { recursive: true, force: true });
+        }
         console.log('');
     }
 
-    // Configure
-    console.log('--- Configuring ---');
-    const configureArgs = [
-        'node-gyp',
-        'configure',
-        '--compiler=mingw',
-        `--directory=${MODULE_ROOT}`,
+    // Ensure build directory exists
+    if (!fs.existsSync(BUILD_DIR)) {
+        fs.mkdirSync(BUILD_DIR, { recursive: true });
+    }
+
+    // Get node-addon-api include path
+    let napiInclude;
+    try {
+        napiInclude = require('node-addon-api').include;
+    } catch (e) {
+        console.error('Failed to get node-addon-api include path:', e.message);
+        process.exit(1);
+    }
+
+    // Compiler and linker flags
+    const cxxFlags = [
+        '-std=c++17',
+        '-fPIC',
+        '-shared',
+        '-Wall',
+        '-O2',
     ];
 
-    try {
-        await run('node', configureArgs, { env, cwd: MODULE_ROOT });
-    } catch (error) {
-        console.error('Configure failed. Common causes:');
-        console.error('  - Missing dependencies: run node scripts/vendor.js');
-        console.error('  - MSYS2 packages not installed: pacman -S mingw-w64-x86_64-libraw mingw-w64-x86_64-libheif');
-        throw error;
+    if (isDebug) {
+        cxxFlags.push('-g');
+    } else {
+        cxxFlags.push('-DNDEBUG');
     }
+
+    // Convert Windows paths to MSYS2-style paths for compiler
+    // D:\Work\... -> /d/Work/... (lowercase drive letter, forward slashes)
+    const toMsysPath = (p) => {
+        const converted = p.replace(/\\/g, '/');
+        return converted.replace(/^([A-Za-z]):/, (m) => `/${m[0].toLowerCase()}`);
+    };
+
+    // Include paths
+    const includePaths = [
+        `-I${toMsysPath(napiInclude)}`,
+        `-I${toMsysPath(path.join(MODULE_ROOT, 'src'))}`,
+        `-I${toMsysPath(path.join(MODULE_ROOT, 'deps', 'include'))}`,
+    ];
+
+    // Add Node.js headers if found
+    if (NODE_HEADERS_PATH) {
+        includePaths.push(`-I${toMsysPath(NODE_HEADERS_PATH)}`);
+        console.log(`Using Node.js headers: ${NODE_HEADERS_PATH}`);
+    } else {
+        console.warn('Node.js headers not found - build may fail');
+    }
+
+    // Library paths
+    const libPaths = [
+        `-L${toMsysPath(path.join(MODULE_ROOT, 'deps', 'lib'))}`,
+        `-L${toMsysPath(path.join(MODULE_ROOT, 'build', 'Release'))}`,
+    ];
+
+    // Libraries (MinGW style)
+    const libs = [
+        '-lraw_r',
+        '-lheif',
+        '-lnode',
+        '-luser32',
+        '-lgdi32',
+    ];
+
+    // Output
+    const outputName = 'nimage.node';
+    const outputPath = path.join(BUILD_DIR, outputName);
+
+    // Source files (convert to MSYS2 paths)
+    const sources = [
+        toMsysPath(path.join(MODULE_ROOT, 'src', 'binding.cpp')),
+        toMsysPath(path.join(MODULE_ROOT, 'src', 'decoder.cpp')),
+    ];
+
+    // Build command (use array for proper escaping)
+    const buildArgs = [
+        ...cxxFlags,
+        ...includePaths,
+        ...sources,
+        ...libPaths,
+        ...libs,
+        `-o${toMsysPath(outputPath)}`,
+    ];
+
+    console.log('--- Building ---');
+    console.log(`> g++ ${cxxFlags.join(' ')}`);
     console.log('');
 
-    // Build
-    console.log('--- Building ---');
-    const buildArgs = [
-        'node-gyp',
-        'build',
-        '--compiler=mingw',
-        `--directory=${MODULE_ROOT}`,
-        ...(isDebug ? ['--debug'] : ['--release']),
-    ];
+    try {
+        await run('g++', buildArgs, { env, cwd: MODULE_ROOT });
+    } catch (error) {
+        console.error('\nBuild failed:', error.message);
+        process.exit(1);
+    }
 
-    await run('node', buildArgs, { env, cwd: MODULE_ROOT });
     console.log('');
 
     // Copy DLLs to build output
     console.log('--- Copying runtime DLLs ---');
-    const buildDir = path.join(MODULE_ROOT, 'build', 'Release');
     const depsBin = path.join(MODULE_ROOT, 'deps', 'bin');
 
     if (fs.existsSync(depsBin)) {
         const dlls = fs.readdirSync(depsBin).filter(f => f.endsWith('.dll'));
         for (const dll of dlls) {
             const src = path.join(depsBin, dll);
-            const dest = path.join(buildDir, dll);
+            const dest = path.join(BUILD_DIR, dll);
             if (fs.existsSync(src)) {
                 fs.copyFileSync(src, dest);
                 console.log(`  Copied: ${dll}`);
@@ -123,7 +208,7 @@ async function build() {
         const dlls = fs.readdirSync(depsLibDir).filter(f => f.endsWith('.dll'));
         for (const dll of dlls) {
             const src = path.join(depsLibDir, dll);
-            const dest = path.join(buildDir, dll);
+            const dest = path.join(BUILD_DIR, dll);
             if (fs.existsSync(src)) {
                 fs.copyFileSync(src, dest);
                 console.log(`  Copied: ${dll}`);
@@ -131,22 +216,60 @@ async function build() {
         }
     }
 
+    // Copy to dist for distribution
+    console.log('--- Copying to dist for distribution ---');
+    const distDir = path.join(MODULE_ROOT, 'dist');
+    if (!fs.existsSync(distDir)) {
+        fs.mkdirSync(distDir, { recursive: true });
+    }
+
+    // Copy the module
+    fs.copyFileSync(outputPath, path.join(distDir, 'nimage.node'));
+    console.log(`  Copied: nimage.node`);
+
+    // Copy all DLLs to dist
+    if (fs.existsSync(BUILD_DIR)) {
+        const dlls = fs.readdirSync(BUILD_DIR).filter(f => f.endsWith('.dll'));
+        for (const dll of dlls) {
+            fs.copyFileSync(path.join(BUILD_DIR, dll), path.join(distDir, dll));
+        }
+        console.log(`  Copied ${dlls.length} DLLs to dist`);
+    }
+
     console.log('\n=== Build complete ===');
-    console.log(`Output: ${buildDir}\\nimage.node`);
+    console.log(`Output: ${outputPath}`);
+    console.log(`Dist: ${distDir}`);
 }
 
 function run(cmd, args, options = {}) {
     return new Promise((resolve, reject) => {
-        console.log(`> ${cmd} ${args.join(' ')}`);
+        // On Windows, use MSYS2 bash for proper MinGW environment
+        const escapeArg = (arg) => {
+            if (arg.includes(' ') || arg.includes('(') || arg.includes(')') || arg.includes('&')) {
+                return `"${arg.replace(/"/g, '\\"')}"`;
+            }
+            return arg;
+        };
 
-        const proc = spawn(cmd, args, {
+        const cmdStr = `${cmd} ${args.map(escapeArg).join(' ')}`;
+        console.log(`> ${cmdStr}`);
+
+        // Use MSYS2 bash to run the command (ensures proper PATH for MinGW tools)
+        const bashArgs = ['-c', cmdStr];
+
+        const proc = spawn(MSYS2_BASH, bashArgs, {
             ...options,
-            shell: true,
+            env: {
+                ...options.env,
+                MSYSTEM: 'MINGW64',
+                PATH: `${path.join(MSYS2_ROOT, 'mingw64', 'bin')};${path.join(MSYS2_ROOT, 'usr', 'bin')};${process.env.PATH}`,
+                MSYS2_ARG_CONV_EXCL_N: '*',
+            },
             windowsHide: false,
         });
 
         let stderr = '';
-        proc.stderr.on('data', (d) => { stderr += d; });
+        proc.stderr.on('data', (d) => { stderr += d; process.stderr.write(d); });
         proc.stdout.on('data', (d) => { process.stdout.write(d); });
 
         proc.on('close', (code) => {

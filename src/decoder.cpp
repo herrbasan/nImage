@@ -3,7 +3,7 @@
  */
 
 #include "decoder.h"
-#include <libraw.h>
+#include <libraw/libraw.h>
 #include <cstring>
 #include <algorithm>
 #include <cmath>
@@ -144,7 +144,7 @@ void LibRawDecoder::close() {
     if (libraw_data_) {
         LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
         raw->recycle();
-        raw->close();
+        // Note: LibRaw 0.22 has no close() method - recycle() handles cleanup
     }
 }
 
@@ -156,25 +156,19 @@ bool LibRawDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output
 
     LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
 
-    // Open buffer if not already open (or reopen)
-    if (raw->imgdata.params.shot_select < 0) {
-        int ret = raw->open_buffer((void*)buffer, size);
-        if (ret != 0) {
-            error_ = "Failed to open RAW buffer (error code: " + std::to_string(ret) + ")";
-            return false;
-        }
+    // Open buffer (LibRaw maintains state, so we always open for each decode)
+    int ret = raw->open_buffer((void*)buffer, size);
+    if (ret != 0) {
+        error_ = "Failed to open RAW buffer (error code: " + std::to_string(ret) + ")";
+        return false;
     }
 
     // Unpack the RAW data
-    int ret = raw->unpack();
+    ret = raw->unpack();
     if (ret != 0) {
         error_ = "Failed to unpack RAW data (error code: " + std::to_string(ret) + ")";
         return false;
     }
-
-    // Unpack 2 for full resolution on some cameras
-    // This is safe to call after unpack() - it's a no-op for most cameras
-    raw->unpack2();
 
     // Process with dcraw - this demosaics and converts to image
     ret = raw->dcraw_process();
@@ -190,16 +184,6 @@ bool LibRawDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output
 bool LibRawDecoder::processRAW(ImageData& output) {
     LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
 
-    // Get output dimensions
-    int width = raw->imgdata.sizes.output_width;
-    int height = raw->imgdata.sizes.output_height;
-    int colors = raw->imgdata.idata.colors;
-
-    if (width <= 0 || height <= 0) {
-        error_ = "Invalid output dimensions from RAW";
-        return false;
-    }
-
     // Get the processed image data
     // After dcraw_process(), data is in imgdata.image as 16-bit RGB
     libraw_processed_image_t* img = raw->dcraw_make_mem_image(nullptr);
@@ -208,12 +192,23 @@ bool LibRawDecoder::processRAW(ImageData& output) {
         return false;
     }
 
+    // Use dimensions from the returned image structure
+    int width = img->width;
+    int height = img->height;
+    int colors = img->colors;
+    int bits = img->bits;
+
+    if (width <= 0 || height <= 0) {
+        error_ = "Invalid output dimensions from RAW";
+        return false;
+    }
+
     // Copy dimensions
     output.width = width;
     output.height = height;
-    output.bitsPerChannel = 8;  // dcraw_process outputs 8-bit
-    output.channels = (img->colors == 4) ? 4 : 3;
-    output.hasAlpha = (img->colors == 4);
+    output.bitsPerChannel = bits;  // Use actual bits from img
+    output.channels = colors;
+    output.hasAlpha = (colors == 4);
     output.colorSpace = "sRGB";  // Default, could be Adobe RGB based on camera
 
     // Set format from what libraw detected
@@ -233,7 +228,7 @@ bool LibRawDecoder::processRAW(ImageData& output) {
     extractMetadataToImageData(output);
 
     // Free the memory
-    raw->dcraw_free_mem_image(img);
+    LibRaw::dcraw_clear_mem(img);
 
     return true;
 }
@@ -263,9 +258,11 @@ void LibRawDecoder::extractMetadataToImageData(ImageData& output) {
         output.focalLength = raw->imgdata.other.focal_len;
     }
 
-    // Date/time
-    if (raw->imgdata.other.datetime[0]) {
-        output.dateTime = raw->imgdata.other.datetime;
+    // Date/time (LibRaw 0.22 uses timestamp instead of datetime string)
+    if (raw->imgdata.other.timestamp > 0) {
+        char datetimeBuf[64];
+        strftime(datetimeBuf, sizeof(datetimeBuf), "%Y:%m:%d %H:%M:%S", localtime(&raw->imgdata.other.timestamp));
+        output.dateTime = datetimeBuf;
     }
 
     // RAW dimensions (sensor)
@@ -314,9 +311,9 @@ bool LibRawDecoder::extractMetadata(ImageMetadata& metadata) {
         ImageFormatUtil::formatToString(
             ImageFormatUtil::formatFromString(raw->imgdata.idata.model)) : "raw";
 
-    // Dimensions
-    metadata.width = raw->imgdata.sizes.output_width;
-    metadata.height = raw->imgdata.sizes.output_height;
+    // Dimensions (LibRaw 0.22 uses width/height, not output_width/output_height)
+    metadata.width = raw->imgdata.sizes.width;
+    metadata.height = raw->imgdata.sizes.height;
     metadata.rawWidth = raw->imgdata.sizes.raw_width;
     metadata.rawHeight = raw->imgdata.sizes.raw_height;
 
@@ -345,9 +342,9 @@ bool LibRawDecoder::extractMetadata(ImageMetadata& metadata) {
         metadata.orientation = 1;
     }
 
-    // Lens
-    if (raw->imgdata.lens.NikonLensType[0] || raw->imgdata.lens.MinoltaLensType[0]) {
-        metadata.lensModel = raw->imgdata.lens.lensmodel;
+    // Lens (LibRaw 0.22 uses Lens from makernotes, not lensmodel directly)
+    if (raw->imgdata.lens.makernotes.Lens[0]) {
+        metadata.lensModel = raw->imgdata.lens.makernotes.Lens;
     }
 
     return true;
@@ -375,8 +372,7 @@ bool LibRawDecoder::supportsFormat(ImageFormat format) const {
 // LibHeif Decoder
 // ============================================================================
 
-LibHeifDecoder::LibHeifDecoder() : heif_context_(nullptr) {
-    // Note: In full implementation, this would initialize libheif
+LibHeifDecoder::LibHeifDecoder() : heif_context_(nullptr), heif_handle_(nullptr) {
 }
 
 LibHeifDecoder::~LibHeifDecoder() {
@@ -384,35 +380,184 @@ LibHeifDecoder::~LibHeifDecoder() {
 }
 
 bool LibHeifDecoder::openBuffer(const uint8_t* buffer, size_t size) {
-    // Note: Full implementation would use heif_context_alloc() and heif_read_from_memory()
     if (!buffer || size < 12) {
         error_ = "Buffer too small or null";
         return false;
     }
+
+    // Free any existing context
+    close();
+
+    // Allocate new context
+    heif_context_ = heif_context_alloc();
+    if (!heif_context_) {
+        error_ = "Failed to allocate HEIF context";
+        return false;
+    }
+
+    // Read from memory
+    heif_error err = heif_context_read_from_memory_without_copy(
+        heif_context_, buffer, size, nullptr);
+    if (err.code != heif_error_Ok) {
+        error_ = std::string("Failed to read HEIF: ") + err.message;
+        heif_context_free(heif_context_);
+        heif_context_ = nullptr;
+        return false;
+    }
+
     return true;
 }
 
 void LibHeifDecoder::close() {
-    // Note: Full implementation would call heif_context_free()
-    heif_context_ = nullptr;
+    if (heif_handle_) {
+        heif_image_handle_release(heif_handle_);
+        heif_handle_ = nullptr;
+    }
+    if (heif_context_) {
+        heif_context_free(heif_context_);
+        heif_context_ = nullptr;
+    }
 }
 
 bool LibHeifDecoder::decodeHeif(ImageData& output) {
-    // TODO: Full libheif implementation
-    // Steps:
-    // 1. heif_context_alloc()
-    // 2. heif_context_read_from_memory()
-    // 3. heif_context_get_primary_image_handle()
-    // 4. heif_image_create()
-    // 5. heif_image_add_plane() for each channel
-    // 6. heif_image_decode()
-    // 7. Extract to ImageData structure
-    return false;
+    if (!heif_context_) {
+        error_ = "No HEIF context - call openBuffer first";
+        return false;
+    }
+
+    // Get primary image handle
+    heif_image_handle* handle = nullptr;
+    heif_error err = heif_context_get_primary_image_handle(heif_context_, &handle);
+    if (err.code != heif_error_Ok) {
+        error_ = std::string("Failed to get primary image: ") + err.message;
+        return false;
+    }
+
+    // Store handle for later release
+    if (heif_handle_) {
+        heif_image_handle_release(heif_handle_);
+    }
+    heif_handle_ = handle;
+
+    // Get image dimensions
+    int width = heif_image_handle_get_width(handle);
+    int height = heif_image_handle_get_height(handle);
+    if (width <= 0 || height <= 0) {
+        error_ = "Invalid image dimensions from HEIF";
+        return false;
+    }
+
+    // Check for alpha channel
+    bool hasAlpha = heif_image_handle_has_alpha_channel(handle) != 0;
+
+    // Decode to RGB or RGBA
+    heif_image* img = nullptr;
+    enum heif_colorspace colorspace = heif_colorspace_RGB;
+    enum heif_chroma chroma = hasAlpha ? heif_chroma_interleaved_RGBA : heif_chroma_interleaved_RGB;
+
+    err = heif_decode_image(handle, &img, colorspace, chroma, nullptr);
+    if (err.code != heif_error_Ok) {
+        error_ = std::string("Failed to decode HEIF: ") + err.message;
+        return false;
+    }
+
+    // Get output dimensions
+    int outWidth = heif_image_get_primary_width(img);
+    int outHeight = heif_image_get_primary_height(img);
+
+    // Get chroma format
+    enum heif_chroma outChroma = heif_image_get_chroma_format(img);
+    int numChannels = (outChroma == heif_chroma_interleaved_RGBA ||
+                       outChroma == heif_chroma_interleaved_RRGGBBAA_LE ||
+                       outChroma == heif_chroma_interleaved_RRGGBBAA_BE) ? 4 : 3;
+
+    // Get pixel data
+    int stride = 0;
+    const uint8_t* pixelData = heif_image_get_plane_readonly(img, heif_channel_interleaved, &stride);
+
+    if (!pixelData) {
+        error_ = "Failed to get pixel data from HEIF image";
+        heif_image_release(img);
+        return false;
+    }
+
+    // Copy to output structure
+    output.width = outWidth;
+    output.height = outHeight;
+    output.bitsPerChannel = 8;  // libheif decodes to 8-bit output
+    output.channels = numChannels;
+    output.hasAlpha = hasAlpha;
+    output.colorSpace = "sRGB";
+    output.format = "heic";
+
+    // Calculate data size (accounting for stride)
+    // rowSize is the actual bytes per row (stride may be larger due to alignment)
+    size_t rowSize = outWidth * numChannels;  // 8 bits per channel = 1 byte
+    size_t dataSize = rowSize * outHeight;
+    output.data.resize(dataSize);
+
+    // Copy row by row (stride may be larger than actual row size)
+    for (int y = 0; y < outHeight; y++) {
+        std::memcpy(output.data.data() + y * rowSize, pixelData + y * stride, rowSize);
+    }
+
+    // Release the decoded image
+    heif_image_release(img);
+
+    // Extract metadata
+    extractMetadataToImageData(output);
+
+    return true;
+}
+
+void LibHeifDecoder::extractMetadataToImageData(ImageData& output) {
+    if (!heif_handle_) {
+        return;
+    }
+
+    // Basic metadata is already populated
+    // HEIF files typically don't have the same camera metadata as RAW files
+    output.hasAlpha = heif_image_handle_has_alpha_channel(heif_handle_) != 0;
 }
 
 bool LibHeifDecoder::extractMetadata(ImageMetadata& metadata) {
-    // TODO: Implement metadata extraction from libheif
-    return false;
+    if (!heif_context_) {
+        error_ = "No HEIF context - call openBuffer first";
+        return false;
+    }
+
+    heif_image_handle* handle = nullptr;
+    heif_error err = heif_context_get_primary_image_handle(heif_context_, &handle);
+    if (err.code != heif_error_Ok) {
+        error_ = std::string("Failed to get primary image: ") + err.message;
+        return false;
+    }
+
+    // Release previous handle if different
+    if (heif_handle_ && heif_handle_ != handle) {
+        heif_image_handle_release(heif_handle_);
+    }
+    heif_handle_ = handle;
+
+    // Get dimensions
+    metadata.width = heif_image_handle_get_width(handle);
+    metadata.height = heif_image_handle_get_height(handle);
+
+    // Get color info
+    metadata.hasAlpha = heif_image_handle_has_alpha_channel(handle) != 0;
+    metadata.bitsPerSample = heif_image_handle_get_luma_bits_per_pixel(handle);
+    if (metadata.bitsPerSample < 0) {
+        metadata.bitsPerSample = 8;
+    }
+
+    metadata.format = "heic";
+    metadata.colorSpace = "sRGB";
+
+    // Orientation - HEIF stores this, but we'd need to check the transformation properties
+    // For now, default to 1
+    metadata.orientation = 1;
+
+    return true;
 }
 
 bool LibHeifDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output) {
@@ -420,10 +565,7 @@ bool LibHeifDecoder::decode(const uint8_t* buffer, size_t size, ImageData& outpu
         return false;
     }
 
-    // TODO: Full libheif implementation
-
-    error_ = "LibHeif decoder not yet implemented - dependencies not bundled";
-    return false;
+    return decodeHeif(output);
 }
 
 bool LibHeifDecoder::getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) {
@@ -431,10 +573,7 @@ bool LibHeifDecoder::getMetadata(const uint8_t* buffer, size_t size, ImageMetada
         return false;
     }
 
-    // TODO: Full libheif implementation
-
-    error_ = "LibHeif decoder not yet implemented - dependencies not bundled";
-    return false;
+    return extractMetadata(metadata);
 }
 
 bool LibHeifDecoder::supportsFormat(ImageFormat format) const {

@@ -80,7 +80,6 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
 
 # Gatsby files
 .cache/
@@ -141,10 +140,12 @@ vite.config.ts.timestamp-*
 # nImage specific
 /deps/
 /prebuilds/
-*.node
-*.dll
-*.so
-*.dylib
+/build/
+
+# Track pre-compiled artefacts in dist/
+dist/*
+!dist/*.node
+!dist/*.dll
 
 # vcpkg
 vcpkg_installed/

@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <libheif/heif.h>
 
 /**
  * Output image data structure
@@ -200,6 +201,7 @@ private:
 
     bool processRAW(ImageData& output);
     bool extractMetadata(ImageMetadata& metadata);
+    void extractMetadataToImageData(ImageData& output);
 };
 
 /**
@@ -217,13 +219,15 @@ public:
 
 private:
     // Internal state
-    void* heif_context_;  // Opaque handle to libheif context
+    heif_context* heif_context_;
+    heif_image_handle* heif_handle_;
 
     bool openBuffer(const uint8_t* buffer, size_t size);
     void close();
 
     bool decodeHeif(ImageData& output);
     bool extractMetadata(ImageMetadata& metadata);
+    void extractMetadataToImageData(ImageData& output);
 };
 
 /**
