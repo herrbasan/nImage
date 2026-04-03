@@ -137,3 +137,20 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# nImage specific
+/deps/
+/prebuilds/
+*.node
+*.dll
+*.so
+*.dylib
+
+# vcpkg
+vcpkg_installed/
+
+# Build artifacts
+*.obj
+*.exp
+*.lib
+*.pdb

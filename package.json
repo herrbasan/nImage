@@ -1,0 +1,64 @@
+{
+  "name": "nimage",
+  "version": "0.1.0",
+  "description": "Native image decoding via NAPI - libraw for RAW, libheif for HEIC, with ICC color profile support",
+  "main": "lib/index.js",
+  "files": [
+    "lib/",
+    "prebuilds/",
+    "build/Release/*.node",
+    "deps/win/bin/*.dll"
+  ],
+  "scripts": {
+    "install": "node scripts/install-prebuilt.js || echo 'Pre-built binary not available, run npm run setup'",
+    "setup": "node scripts/vendor.js",
+    "configure": "node-gyp configure",
+    "build": "npm run setup && npm run configure && node-gyp build",
+    "build:debug": "npm run configure && node-gyp build --debug",
+    "rebuild": "node-gyp rebuild",
+    "clean": "node-gyp clean",
+    "test": "node test/index.test.js",
+    "package": "node scripts/package-binary.js",
+    "prepublishOnly": "npm run build && npm run package"
+  },
+  "keywords": [
+    "image",
+    "raw",
+    "heic",
+    "heif",
+    "cr2",
+    "nef",
+    "arw",
+    "libraw",
+    "libheif",
+    "napi",
+    "native",
+    "decoder",
+    "icc",
+    "color-profile"
+  ],
+  "author": "David Renelt",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/herrbasan/nImage.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "win32",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "dependencies": {
+    "node-addon-api": "^8.0.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.0.0"
+  },
+  "optionalDependencies": {}
+}
