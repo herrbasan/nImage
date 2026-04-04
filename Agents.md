@@ -30,7 +30,7 @@ nImage/
 │   └── binding.cpp          # NAPI bindings - JS entry point
 ├── lib/
 │   └── index.js            # JS API layer with graceful fallback
-├── dist/                   # Pre-compiled Windows binaries (51 DLLs + nimage.node)
+├── dist/                   # Pre-compiled Windows binaries (minimal DLLs, magick.exe + nimage.node)
 ├── scripts/
 │   ├── setup.ps1           # Full setup: MSYS2, deps, build, test
 │   └── build.js             # Direct g++ invocation
@@ -74,11 +74,10 @@ SGI, TGA, VTF, and 150+ additional formats via ImageMagick
 - `heif_context_read_from_memory_without_copy()`
 - Outputs RGB or RGBA depending on alpha
 
-### MagickDecoder (Fallback)
-- Handles all formats not covered by LibRaw/LibHeif
-- Uses ImageMagick Core library (MagickCore) directly
+### MagickDecoder (Fallback CLI)
+- Handles all formats not covered by LibRaw/LibHeif and Sharp inside the JS wrapper `lib/index.js`
+- Uses `magick.exe` CLI process directly, extracting to PNG to prevent DLL collisions with Electron apps
 - Supports 150+ formats: documents (PDF, SVG, AI, DOCX, XLSX, PPTX), scientific (EXR, HDR, DPX, FITS), video stills (AVI, MOV, MP4, MKV), and more
-- Factory creates MagickDecoder for any format not handled by specialized decoders
 
 ### Thumbnail Extraction (v2.2.0)
 

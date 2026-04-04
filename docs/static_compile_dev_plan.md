@@ -287,9 +287,9 @@ If Phase 1-5 proves CLI fallback too slow for edge cases, return here:
 
 | Phase | Status |
 |-------|--------|
-| Phase 1: Dependency Audit | 🔲 TODO |
-| Phase 2: Build Static libheif | 🔲 TODO |
-| Phase 3: Build System + CLI Fallback | 🔲 TODO |
-| Phase 4: Electron Integration Testing | 🔲 TODO |
-| Phase 5: Finalize | 🔲 TODO |
+| Phase 1: Dependency Audit | ✅ DONE |
+| Phase 2: Build Static libheif | ✅ DONE |
+| Phase 3: Build System + CLI Fallback | ✅ DONE |
+| Phase 4: Electron Integration Testing | ✅ DONE |
+| Phase 5: Finalize | ✅ DONE |
 | Future: Full ImageMagick Static | ⬜ OPTIONAL |

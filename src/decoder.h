@@ -472,32 +472,6 @@ private:
 };
 
 /**
- * MagickDecoder for ImageMagick-handled formats (PSD, PDF, SVG, EXR, HDR, BigTIFF)
- */
-class MagickDecoder : public ImageDecoder {
-public:
-    MagickDecoder();
-    ~MagickDecoder() override;
-
-    bool decode(const uint8_t* buffer, size_t size, ImageData& output) override;
-    bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) override;
-    bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) override;
-    size_t stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) override;
-    bool supportsFormat(ImageFormat format) const override;
-    const char* formatName() const override { return "ImageMagick"; }
-
-private:
-    // Internal state
-    void* imageInfo_;      // MagickCore ImageInfo*
-    void* exceptionInfo_;  // ExceptionInfo*
-
-    bool openBuffer(const uint8_t* buffer, size_t size);
-    bool close();
-    bool processImage(ImageData& output);
-    bool extractMetadataOnly(ImageMetadata& metadata);
-};
-
-/**
  * Format utility functions
  */
 namespace ImageFormatUtil {

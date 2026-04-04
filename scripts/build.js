@@ -104,7 +104,9 @@ async function build() {
     // Compiler and linker flags
     const cxxFlags = [
         '-std=c++17',
-        '-fPIC',
+        '-DLIBHEIF_STATIC_BUILD',
+        '-DLIBRAW_NODLL',
+        '-fopenmp',
         '-shared',
         '-Wall',
         '-O2',
@@ -128,7 +130,6 @@ async function build() {
         `-I${toMsysPath(napiInclude)}`,
         `-I${toMsysPath(path.join(MODULE_ROOT, 'src'))}`,
         `-I${toMsysPath(path.join(MODULE_ROOT, 'deps', 'include'))}`,
-        `-I${toMsysPath(path.join(MODULE_ROOT, 'deps', 'include', 'ImageMagick-7'))}`,
     ];
 
     // Add Node.js headers if found
@@ -142,15 +143,25 @@ async function build() {
     // Library paths
     const libPaths = [
         `-L${toMsysPath(path.join(MODULE_ROOT, 'deps', 'lib'))}`,
+        `-L${toMsysPath(path.join(MSYS2_ROOT, 'mingw64', 'lib'))}`,
         `-L${toMsysPath(path.join(MODULE_ROOT, 'build', 'Release'))}`,
         `-L${toMsysPath(path.join(process.env.LOCALAPPDATA || '', 'node-gyp', 'Cache', '39.2.3', 'x64'))}`,
     ];
 
     // Libraries (MinGW style)
     const libs = [
-        '-lraw_r',
-        '-lheif',
-        '-lMagickCore-7.Q16HDRI',
+        '-l:libraw.a',
+        '-l:libheif.a',
+        '-lde265',
+        '-laom',
+        '-ldav1d',
+        '-lsharpyuv',
+        '-llcms2',
+        '-lstdc++',
+        '-fopenmp',
+        '-lz',
+        '-ljpeg',
+        '-lws2_32',
         '-lnode',
         '-luser32',
         '-lgdi32',
@@ -189,55 +200,31 @@ async function build() {
 
     console.log('');
 
-    // Copy DLLs to build output
-    console.log('--- Copying runtime DLLs ---');
+    // Copy magick.exe to dist for CLI fallback
     const depsBin = path.join(MODULE_ROOT, 'deps', 'bin');
-
-    if (fs.existsSync(depsBin)) {
-        const dlls = fs.readdirSync(depsBin).filter(f => f.endsWith('.dll'));
-        for (const dll of dlls) {
-            const src = path.join(depsBin, dll);
-            const dest = path.join(BUILD_DIR, dll);
-            if (fs.existsSync(src)) {
-                fs.copyFileSync(src, dest);
-                console.log(`  Copied: ${dll}`);
-            }
-        }
-    }
-
-    // Also check deps/lib for DLLs
-    const depsLibDir = path.join(MODULE_ROOT, 'deps', 'lib');
-    if (fs.existsSync(depsLibDir)) {
-        const dlls = fs.readdirSync(depsLibDir).filter(f => f.endsWith('.dll'));
-        for (const dll of dlls) {
-            const src = path.join(depsLibDir, dll);
-            const dest = path.join(BUILD_DIR, dll);
-            if (fs.existsSync(src)) {
-                fs.copyFileSync(src, dest);
-                console.log(`  Copied: ${dll}`);
-            }
-        }
-    }
-
-    // Copy to dist for distribution
-    console.log('--- Copying to dist for distribution ---');
     const distDir = path.join(MODULE_ROOT, 'dist');
     if (!fs.existsSync(distDir)) {
         fs.mkdirSync(distDir, { recursive: true });
     }
 
+    const magickPath = path.join(depsBin, 'magick.exe');
+    if (fs.existsSync(magickPath)) {
+        fs.copyFileSync(magickPath, path.join(distDir, 'magick.exe'));
+        console.log(`  Copied: magick.exe to dist`);
+    }
+
+    const prefixBin = path.join(MSYS2_ROOT, 'mingw64', 'bin');
+    ['libde265', 'libaom', 'libdav1d', 'libsharpyuv', 'libjpeg', 'libgomp', 'zlib', 'libgcc_s_seh', 'libstdc++', 'libwinpthread', 'liblcms2'].forEach(dllPrefix => {
+        const matchingDlls = fs.readdirSync(prefixBin).filter(f => f.startsWith(dllPrefix) && f.endsWith('.dll'));
+        for (const dll of matchingDlls) {
+            fs.copyFileSync(path.join(prefixBin, dll), path.join(distDir, dll));
+            console.log(`  Copied: ${dll} to dist`);
+        }
+    });
+
     // Copy the module
     fs.copyFileSync(outputPath, path.join(distDir, 'nimage.node'));
     console.log(`  Copied: nimage.node`);
-
-    // Copy all DLLs to dist
-    if (fs.existsSync(BUILD_DIR)) {
-        const dlls = fs.readdirSync(BUILD_DIR).filter(f => f.endsWith('.dll'));
-        for (const dll of dlls) {
-            fs.copyFileSync(path.join(BUILD_DIR, dll), path.join(distDir, dll));
-        }
-        console.log(`  Copied ${dlls.length} DLLs to dist`);
-    }
 
     console.log('\n=== Build complete ===');
     console.log(`Output: ${outputPath}`);
