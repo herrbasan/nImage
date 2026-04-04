@@ -146,6 +146,7 @@ vite.config.ts.timestamp-*
 dist/*
 !dist/*.node
 !dist/*.dll
+!dist/magick.exe
 
 # vcpkg
 vcpkg_installed/
