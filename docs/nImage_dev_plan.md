@@ -104,9 +104,10 @@ All encoding is handled by Sharp. No native encoders needed.
 - [x] Standard formats (JPEG, PNG, WebP, TIFF, GIF) pass through Sharp directly
 - [x] No native decoder needed - Sharp handles these natively
 
-### Phase 6: Pipeline Polish 🔲 TODO
-- [ ] Error propagation from Sharp through nImage
-- [ ] Metadata preservation (EXIF) through pipeline
+### Phase 6: Memory & Performance Optimization 🔲 TODO
+- [ ] Tile-based decoding for large images
+- [ ] Streaming decode for memory efficiency
+- [ ] Thumbnail extraction without full decode
 - [ ] Performance: avoid buffer copies where possible
 
 ### Phase 7: Encoder Options (via Sharp) ✅ DONE
@@ -124,10 +125,9 @@ All encoding is handled by Sharp. No native encoders needed.
 - [ ] Render specific page to image
 - [ ] Document ingest utilities for CMS/RAG pipelines
 
-### Phase 10: Polish ⬜ FUTURE
-- [ ] Tile-based decoding for large images
-- [ ] Streaming decode for memory efficiency
-- [ ] Thumbnail extraction without full decode
+### Phase 10: Error Handling & Polish ⬜ FUTURE
+- [ ] Error propagation from Sharp through nImage
+- [ ] Metadata preservation (EXIF) through pipeline
 - [ ] Performance benchmarks vs ImageMagick/sharp
 
 ### Phase 11: Build Extensions ⬜ FUTURE
