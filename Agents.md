@@ -103,11 +103,14 @@ npm run build
 | 1 | ✅ DONE | Foundation: NAPI bindings, base decoder, format detection |
 | 2 | ✅ DONE | LibRaw integration for RAW formats |
 | 3 | ✅ DONE | LibHeif integration for HEIC/HEIF |
-| 4 | ✅ DONE | ImageMagick fallback for 150+ formats (PSD, PDF, SVG, AI, DOCX, EXR, HDR, etc.) |
-| 5 | ✅ DONE | Sharp integration for transforms and encoding |
-| 6 | 🔲 TODO | Multi-page PDF support |
-| 7 | ⬜ FUTURE | LittleCMS color management |
-| 8 | ⬜ FUTURE | Polish: tiling, streaming, thumbnails |
+| 4 | ✅ DONE | Sharp integration for transforms and encoding |
+| 5 | ✅ DONE | Standard format decoders (Sharp pass-through) |
+| 6 | 🔲 TODO | Memory & Performance: tile-based decoding, streaming, thumbnails |
+| 7 | ✅ DONE | Encoder options (via Sharp) |
+| 8 | ✅ DONE | AVIF support (via Sharp) |
+| 9 | ⬜ FUTURE | Multi-page PDF support |
+| 10 | ⬜ FUTURE | Error handling & polish |
+| 11 | ⬜ FUTURE | Build extensions (macOS, ARM64)
 
 **Note:** Encoding is handled by Sharp (JPEG, PNG, WebP, AVIF, TIFF). No separate encoders needed.
 
