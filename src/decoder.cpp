@@ -418,6 +418,76 @@ bool LibRawDecoder::supportsFormat(ImageFormat format) const {
     }
 }
 
+bool LibRawDecoder::getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) {
+    if (!buffer || size < 64) {
+        error_ = "Buffer too small or null";
+        return false;
+    }
+
+    LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
+
+    int ret = raw->open_buffer((void*)buffer, size);
+    if (ret != 0) {
+        error_ = "Failed to open RAW buffer (error code: " + std::to_string(ret) + ")";
+        return false;
+    }
+
+    ret = raw->unpack_thumb();
+    if (ret != 0) {
+        error_ = "Failed to unpack thumbnail (error code: " + std::to_string(ret) + ")";
+        return false;
+    }
+
+    if (raw->imgdata.thumbnail.tformat != LIBRAW_THUMBNAIL_JPEG) {
+        error_ = "Thumbnail is not JPEG format";
+        return false;
+    }
+
+    int thumb_width = raw->imgdata.thumbnail.twidth;
+    int thumb_height = raw->imgdata.thumbnail.theight;
+
+    if (thumb_width <= 0 || thumb_height <= 0) {
+        error_ = "Invalid thumbnail dimensions";
+        return false;
+    }
+
+    if (thumb_width <= maxSize && thumb_height <= maxSize) {
+        output.width = thumb_width;
+        output.height = thumb_height;
+        output.bitsPerChannel = 8;
+        output.channels = 3;
+        output.hasAlpha = false;
+        output.colorSpace = "sRGB";
+        output.format = "jpeg";
+        output.data.assign(raw->imgdata.thumbnail.thumb, raw->imgdata.thumbnail.thumb + raw->imgdata.thumbnail.tlength);
+        return true;
+    }
+
+    libraw_processed_image_t* thumb = raw->dcraw_make_mem_thumb(nullptr);
+    if (!thumb) {
+        error_ = "Failed to create thumbnail memory";
+        return false;
+    }
+
+    if (thumb->type != LIBRAW_IMAGE_JPEG || !thumb->data) {
+        LibRaw::dcraw_clear_mem(thumb);
+        error_ = "Thumbnail is not JPEG or has no data";
+        return false;
+    }
+
+    output.width = thumb->width;
+    output.height = thumb->height;
+    output.bitsPerChannel = 8;
+    output.channels = 3;
+    output.hasAlpha = false;
+    output.colorSpace = "sRGB";
+    output.format = "jpeg";
+    output.data.assign(thumb->data, thumb->data + thumb->data_size);
+
+    LibRaw::dcraw_clear_mem(thumb);
+    return true;
+}
+
 // ============================================================================
 // LibHeif Decoder
 // ============================================================================
@@ -626,6 +696,89 @@ bool LibHeifDecoder::getMetadata(const uint8_t* buffer, size_t size, ImageMetada
     return extractMetadata(metadata);
 }
 
+bool LibHeifDecoder::getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) {
+    if (!openBuffer(buffer, size)) {
+        return false;
+    }
+
+    heif_image_handle* handle = nullptr;
+    heif_error err = heif_context_get_primary_image_handle(heif_context_, &handle);
+    if (err.code != heif_error_Ok) {
+        error_ = std::string("Failed to get primary image: ") + err.message;
+        return false;
+    }
+
+    int num_thumbnails = heif_image_handle_get_number_of_thumbnails(handle);
+    if (num_thumbnails == 0) {
+        heif_image_handle_release(handle);
+        error_ = "No thumbnails available in HEIF";
+        return false;
+    }
+
+    int32_t thumb_id = heif_image_handle_get_thumbnail_id(handle, 0);
+    heif_image_handle_release(handle);
+
+    heif_image_handle* thumb_handle = nullptr;
+    err = heif_image_handle_get_thumbnail(heif_context_, handle, thumb_id, &thumb_handle);
+    if (err.code != heif_error_Ok) {
+        error_ = std::string("Failed to get thumbnail: ") + err.message;
+        return false;
+    }
+
+    int thumb_width = heif_image_handle_get_width(thumb_handle);
+    int thumb_height = heif_image_handle_get_height(thumb_handle);
+
+    if (thumb_width <= 0 || thumb_height <= 0) {
+        heif_image_handle_release(thumb_handle);
+        error_ = "Invalid thumbnail dimensions";
+        return false;
+    }
+
+    if (thumb_width <= maxSize && thumb_height <= maxSize) {
+        bool hasAlpha = heif_image_handle_has_alpha_channel(thumb_handle) != 0;
+        heif_colorspace colorspace = heif_colorspace_RGB;
+        heif_chroma chroma = hasAlpha ? heif_chroma_interleaved_RGBA : heif_chroma_interleaved_RGB;
+
+        heif_image* thumb_img = nullptr;
+        err = heif_decode_image(thumb_handle, &thumb_img, colorspace, chroma, nullptr);
+        heif_image_handle_release(thumb_handle);
+
+        if (err.code != heif_error_Ok) {
+            error_ = std::string("Failed to decode thumbnail: ") + err.message;
+            return false;
+        }
+
+        int outWidth = heif_image_get_primary_width(thumb_img);
+        int outHeight = heif_image_get_primary_height(thumb_img);
+
+        int stride = 0;
+        const uint8_t* pixelData = heif_image_get_plane_readonly(thumb_img, heif_channel_interleaved, &stride);
+
+        output.width = outWidth;
+        output.height = outHeight;
+        output.bitsPerChannel = 8;
+        output.channels = hasAlpha ? 4 : 3;
+        output.hasAlpha = hasAlpha;
+        output.colorSpace = "sRGB";
+        output.format = "heic";
+
+        size_t rowSize = outWidth * output.channels;
+        size_t dataSize = rowSize * outHeight;
+        output.data.resize(dataSize);
+
+        for (int y = 0; y < outHeight; y++) {
+            std::memcpy(output.data.data() + y * rowSize, pixelData + y * stride, rowSize);
+        }
+
+        heif_image_release(thumb_img);
+        return true;
+    }
+
+    heif_image_handle_release(thumb_handle);
+    error_ = "Thumbnail too large";
+    return false;
+}
+
 bool LibHeifDecoder::supportsFormat(ImageFormat format) const {
     switch (format) {
         case ImageFormat::HEIC:
@@ -831,6 +984,106 @@ bool MagickDecoder::getMetadata(const uint8_t* buffer, size_t size, ImageMetadat
     // Get format from magick string
     metadata.format = image->magick;
 
+    DestroyImage(image);
+    return true;
+}
+
+bool MagickDecoder::getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) {
+    if (!buffer || size < 12) {
+        error_ = "Buffer too small or null";
+        return false;
+    }
+
+    ImageInfo* info = static_cast<ImageInfo*>(imageInfo_);
+    ExceptionInfo* exception = static_cast<ExceptionInfo*>(exceptionInfo_);
+
+    GetImageInfo(info);
+    info->blob = (void*)buffer;
+    info->length = size;
+
+    Image* image = ReadImage(info, exception);
+    if (!image || exception->severity != UndefinedException) {
+        if (image) DestroyImage(image);
+        error_ = "Failed to read image for thumbnail";
+        return false;
+    }
+
+    int origWidth = static_cast<int>(image->columns);
+    int origHeight = static_cast<int>(image->rows);
+
+    double scale = 1.0;
+    if (origWidth > maxSize || origHeight > maxSize) {
+        double scaleX = static_cast<double>(maxSize) / origWidth;
+        double scaleY = static_cast<double>(maxSize) / origHeight;
+        scale = (scaleX < scaleY) ? scaleX : scaleY;
+    }
+
+    int thumbWidth = static_cast<int>(origWidth * scale);
+    int thumbHeight = static_cast<int>(origHeight * scale);
+    if (thumbWidth < 1) thumbWidth = 1;
+    if (thumbHeight < 1) thumbHeight = 1;
+
+    Image* resized = nullptr;
+    if (scale < 1.0) {
+        FilterType filter = scale > 0.5 ? LagrangeFilter : LanczosFilter;
+        resized = ResizeImage(image, thumbWidth, thumbHeight, filter, exception);
+        DestroyImage(image);
+        image = resized;
+        if (!image || exception->severity != UndefinedException) {
+            if (image) DestroyImage(image);
+            error_ = "Failed to resize image for thumbnail";
+            return false;
+        }
+    }
+
+    if (image->alpha_trait != UndefinedPixelTrait) {
+        (void)SetImageAlpha(image, OpaqueAlpha, exception);
+    }
+    if (SetImageType(image, TrueColorType, exception) == MagickFalse) {
+        DestroyImage(image);
+        error_ = "Failed to convert image to RGB";
+        return false;
+    }
+
+    int width = static_cast<int>(image->columns);
+    int height = static_cast<int>(image->rows);
+    int channels = (image->alpha_trait != UndefinedPixelTrait) ? 4 : 3;
+
+    size_t dataSize = (size_t)width * height * channels;
+    output.data.resize(dataSize);
+    output.width = width;
+    output.height = height;
+    output.bitsPerChannel = 8;
+    output.channels = channels;
+    output.hasAlpha = (channels == 4);
+    output.colorSpace = "sRGB";
+    output.format = image->magick;
+    output.orientation = static_cast<int>(image->orientation);
+    if (output.orientation < 1 || output.orientation > 8) {
+        output.orientation = 1;
+    }
+
+    char* pixelData = reinterpret_cast<char*>(output.data.data());
+    for (int y = 0; y < height; y++) {
+        Quantum* pixels = GetAuthenticPixels(image, 0, y, width, 1, exception);
+        if (!pixels) {
+            DestroyImage(image);
+            error_ = "Failed to read pixel row";
+            return false;
+        }
+        for (int x = 0; x < width; x++) {
+            size_t idx = (y * width + x) * channels;
+            pixelData[idx + 0] = static_cast<char>(GetPixelRed(image, pixels));
+            pixelData[idx + 1] = static_cast<char>(GetPixelGreen(image, pixels));
+            pixelData[idx + 2] = static_cast<char>(GetPixelBlue(image, pixels));
+            if (channels == 4) {
+                pixelData[idx + 3] = static_cast<char>(GetPixelAlpha(image, pixels));
+            }
+            pixels += channels;
+        }
+    }
+
+    (void)SyncAuthenticPixels(image, exception);
     DestroyImage(image);
     return true;
 }

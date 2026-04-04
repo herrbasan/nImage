@@ -389,6 +389,11 @@ public:
     // Get metadata without full decode
     virtual bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) = 0;
 
+    // Extract embedded thumbnail (fast, no full demosaic)
+    // Returns true if thumbnail was extracted, false if not available
+    // If thumbnail is not available, output is unmodified
+    virtual bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) = 0;
+
     // Check if this decoder supports the given format
     virtual bool supportsFormat(ImageFormat format) const = 0;
 
@@ -412,6 +417,7 @@ public:
 
     bool decode(const uint8_t* buffer, size_t size, ImageData& output) override;
     bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) override;
+    bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) override;
     bool supportsFormat(ImageFormat format) const override;
     const char* formatName() const override { return "LibRaw"; }
 
@@ -437,6 +443,7 @@ public:
 
     bool decode(const uint8_t* buffer, size_t size, ImageData& output) override;
     bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) override;
+    bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) override;
     bool supportsFormat(ImageFormat format) const override;
     const char* formatName() const override { return "LibHeif"; }
 
@@ -463,6 +470,7 @@ public:
 
     bool decode(const uint8_t* buffer, size_t size, ImageData& output) override;
     bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) override;
+    bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) override;
     bool supportsFormat(ImageFormat format) const override;
     const char* formatName() const override { return "ImageMagick"; }
 

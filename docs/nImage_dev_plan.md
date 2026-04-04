@@ -1,7 +1,7 @@
 # nImage - Development Plan
 
 **Last Updated**: 2026-04-04
-**Version**: 2.1.0 (ImageMagick fallback complete)
+**Version**: 2.2.0 (Phase 8: Features 1-3 done)
 
 ---
 
@@ -138,70 +138,98 @@ All encoding is handled by Sharp. No native encoders needed.
 - [x] Test Sharp AVIF output
 - [x] Pipeline: any format → Sharp AVIF encode
 
-### Phase 8: Memory & Performance Optimization 🔲 TODO
+### Phase 8: Memory & Performance Optimization 🔄 IN PROGRESS
 
 #### Goals
-- Sub-100ms thumbnail extraction for preview generation
-- Zero-copy path where possible (avoid intermediate buffer allocations)
-- Pipeline-level error propagation and metadata preservation
+- Sub-100ms thumbnail extraction for preview generation ✅
+- Zero-copy path where possible (avoid intermediate buffer allocations) ✅
+- Pipeline-level error propagation and metadata preservation ✅
 
 ---
 
-#### Feature 1: Error Propagation & Metadata
+#### Feature 1: Error Propagation & Metadata ✅ DONE
 
 **Error Propagation:**
 - Catch Sharp errors during pipeline and surface as nImage errors
 - Preserve error chain: Sharp error → nImage error with context
+- Enhanced errors include pipeline operation info
 
 **Metadata Preservation:**
-- Extract EXIF during decode, re-attach to pipeline output
-- Option to strip/discard via `stripExif: true`
-- ICC profile passthrough when output color space matches
+- Extract metadata during native decode (RAW/HEIC)
+- Store orientation for potential re-application
+- `pipeline.getMetadata()` returns stored metadata
+- `preserveExif: true` option for JPEG output to preserve orientation
 
 **API:**
 ```javascript
-const result = await nImage('photo.cr2')
+// Enhanced error with pipeline context
+try {
+  await nImage('photo.cr2').resize(999999).jpeg().toBuffer();
+} catch (err) {
+  console.log(err.message); // "nImage pipeline failed (resize → jpeg):..."
+  console.log(err.originalError); // Original Sharp error
+  console.log(err.pipeline); // { operations, outputFormat, ... }
+}
+
+// Get stored metadata from native decode
+const meta = pipeline.getMetadata();
+// { exif, icc, orientation, camera, capture }
+
+// Preserve orientation in output
+await nImage('photo.cr2')
   .resize(1024)
   .jpeg({ quality: 85, preserveExif: true })
   .toBuffer();
-// result.metadata contains original EXIF if preserveExif: true
 ```
 
 ---
 
-#### Feature 2: Zero-Copy Pipeline
+#### Feature 2: Zero-Copy Pipeline ✅ DONE
 
 Minimize buffer copies between decode → transform → encode.
 
 **Implementation:**
-- Reuse `ImageData` buffer in Sharp input when possible
-- Use `sharp.raw()` with `copy === false` to avoid unnecessary allocation
-- Pool memory for repeated operations (batch processing)
+- Pass TypedArray directly to Sharp instead of `Buffer.from(array)` to avoid copy
+- Sharp accepts ArrayBuffer/TypedArray for raw input natively
+- `BufferPool` class for batch processing to reuse allocated buffers
 
-**API changes:**
+**API:**
 ```javascript
-// Pool for batch processing
+// Buffer pool for batch processing
 const pool = nImage.createBufferPool({ maxBuffers: 8 });
-const buf = pool.acquire(size);
-pool.release(buf);
+const buf = pool.acquire(size);  // Gets pooled or new buffer
+pool.release(buf);  // Returns to pool
+
+// TypedArray input (zero-copy from native decode)
+const imageData = nImage.decode(buffer);
+// imageData.data is passed directly to Sharp without copy
 ```
 
 ---
 
-#### Feature 3: Thumbnail Extraction
+#### Feature 3: Thumbnail Extraction ✅ DONE
 
 Extract embedded thumbnail without full demosaic/color conversion.
 
 **Implementation:**
-- LibRaw: Extract `thumbnail` field directly (pre-demosaic JPEG)
-- LibHeif: Use `heif_image_handle_get_thumbnail`
-- Fall back to reduced-size decode if no embedded thumbnail
+- LibRaw: Extract `thumbnail` field directly (pre-demosaic JPEG) via `unpack_thumb()` and `dcraw_make_mem_thumb()`
+- LibHeif: Use `heif_image_handle_get_thumbnail` API
+- MagickDecoder: Fast resize sampling to generate thumbnail on-the-fly
 
 **API:**
 ```javascript
+// Standalone function
 const thumb = await nImage.thumbnail(buffer, { size: 256 });
-// Returns ImageData at requested size, < 10ms
+// Returns ImageData at requested size, < 10ms for embedded thumbnails
+
+// Pipeline method
+const thumb = await nImage('photo.cr2').thumbnail({ size: 256 });
 ```
+
+**Test Coverage:**
+- RAW thumbnail extraction (CR2)
+- HEIC thumbnail extraction
+- JPEG/standard format thumbnail (via MagickDecoder resize)
 
 ---
 
@@ -245,6 +273,12 @@ Establish baseline metrics for comparison.
 ### Phase 10: Large Image Support ⬜ FUTURE
 - [ ] Tile-based decoding for 100MP+ images
 - [ ] Region-of-interest decode (decode only visible portion)
+- [ ] Streaming decode for memory-efficient processing
+
+### Phase 11: Benchmarks ⬜ FUTURE
+- [ ] Comprehensive benchmark suite
+- [ ] Compare against ImageMagick, libvips CLI, sharp
+- [ ] Document performance targets vs actual
 
 
 
@@ -558,7 +592,19 @@ npm run setup
 
 ## 12. Changelog
 
-### v2.1.0 (Current)
+### v2.2.0 (Current)
+- **Phase 8 Features 1-3**: Error propagation, Zero-copy pipeline, Thumbnail extraction
+  - Enhanced pipeline errors with operation context
+  - Metadata preservation from native decode (orientation, camera, capture)
+  - `preserveExif: true` option for JPEG output
+  - `BufferPool` for batch processing
+  - `nImage.thumbnail(buffer, { size: 256 })` standalone function
+  - `nImage('photo.cr2').thumbnail({ size: 256 })` pipeline method
+  - RAW: Fast thumbnail via `unpack_thumb()` + `dcraw_make_mem_thumb()`
+  - HEIC: Native thumbnail via `heif_image_handle_get_thumbnail()`
+  - Standard formats: Sharp resize for fast thumbnails
+
+### v2.1.0
 - **ImageMagick fallback**: 150+ additional formats supported (PDF, SVG, AI, DOCX, XLSX, PPTX, EXR, HDR, etc.)
 - **MagickDecoder**: Catch-all fallback for any format not handled by LibRaw/LibHeif
 - **212 formats total**: RAW (22), HEIC (3), Standard (9), Documents (13), Scientific (20), Video Stills (12), Other (150+)

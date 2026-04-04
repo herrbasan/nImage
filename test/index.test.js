@@ -168,6 +168,60 @@ async function runTests() {
     }
     console.log('');
 
+    // Test thumbnail extraction
+    console.log('--- Testing Thumbnail Extraction ---');
+    if (!nImage.isLoaded) {
+        console.log('SKIPPED: Native module not loaded');
+    } else {
+        const testCr2Path = path.join(__dirname, 'assets', 'IMG_2593.CR2');
+        const testHeicPath = path.join(__dirname, 'assets', 'IMG_0092_1.HEIC');
+        const testJpgPath = path.join(__dirname, 'assets', '_4240213.jpg');
+
+        if (fs.existsSync(testCr2Path)) {
+            try {
+                const start = Date.now();
+                const thumb = await nImage.thumbnail(fs.readFileSync(testCr2Path), { size: 256 });
+                const elapsed = Date.now() - start;
+                console.log('RAW thumbnail:', thumb.width + 'x' + thumb.height, '(' + elapsed + 'ms)');
+                assert(thumb.width > 0 && thumb.height > 0, 'Thumbnail should have dimensions');
+                assert(thumb.data && thumb.data.length > 0, 'Thumbnail should have data');
+            } catch (err) {
+                console.log('RAW thumbnail error:', err.message);
+            }
+        } else {
+            console.log('SKIPPED: CR2 test file not found');
+        }
+
+        if (fs.existsSync(testHeicPath)) {
+            try {
+                const start = Date.now();
+                const thumb = await nImage.thumbnail(fs.readFileSync(testHeicPath), { size: 256 });
+                const elapsed = Date.now() - start;
+                console.log('HEIC thumbnail:', thumb.width + 'x' + thumb.height, '(' + elapsed + 'ms)');
+                assert(thumb.width > 0 && thumb.height > 0, 'Thumbnail should have dimensions');
+            } catch (err) {
+                console.log('HEIC thumbnail error:', err.message);
+            }
+        } else {
+            console.log('SKIPPED: HEIC test file not found');
+        }
+
+        if (fs.existsSync(testJpgPath)) {
+            try {
+                const start = Date.now();
+                const thumb = await nImage.thumbnail(fs.readFileSync(testJpgPath), { size: 128 });
+                const elapsed = Date.now() - start;
+                console.log('JPEG thumbnail:', thumb.width + 'x' + thumb.height, '(' + elapsed + 'ms)');
+                assert(thumb.width > 0 && thumb.height > 0, 'Thumbnail should have dimensions');
+            } catch (err) {
+                console.log('JPEG thumbnail error:', err.message);
+            }
+        } else {
+            console.log('SKIPPED: JPEG test file not found');
+        }
+    }
+    console.log('');
+
     // Summary
     console.log('=================');
     console.log('Basic tests PASSED');

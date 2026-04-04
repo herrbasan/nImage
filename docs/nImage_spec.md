@@ -2,7 +2,7 @@
 
 **Last Updated**: 2026-04-04
 
-**Version**: 2.1.0 - ImageMagick fallback complete (212 formats supported)
+**Version**: 2.2.0 - Phase 8: Error propagation & Thumbnail extraction
 
 ## Overview
 
@@ -492,6 +492,30 @@ npm run build
 
 ## Error Handling
 
+### Error Propagation (v2.2.0)
+
+Pipeline errors are enhanced with context:
+
+```javascript
+try {
+  await nImage('photo.cr2')
+    .resize(999999)  // invalid size
+    .jpeg()
+    .toBuffer();
+} catch (err) {
+  console.log(err.message);
+  // "nImage pipeline failed (resize → jpeg): maximum image dimension is 100000"
+
+  console.log(err.originalError);
+  // Original Sharp/libvips error
+
+  console.log(err.pipeline);
+  // { input, operations, outputFormat, formatDetected }
+}
+```
+
+### Error Codes
+
 | Error Code | Cause | Recovery |
 |------------|-------|----------|
 | `UNSUPPORTED_FORMAT` | Unknown format | Use `detectFormat` to check |
@@ -506,8 +530,51 @@ npm run build
 - [ ] LittleCMS integration for ICC color management
 - [ ] Tile-based decoding for memory efficiency
 - [ ] Streaming decode/encode for large files
-- [ ] Thumbnail extraction without full decode
+- [x] Thumbnail extraction without full decode
 - [ ] EXIF manipulation
 - [ ] Multi-page TIFF support
+
+## Thumbnail Extraction
+
+**Fast thumbnail extraction** without full image decode:
+
+```
+Input Buffer
+     │
+     ▼
+Format Detection (pure JS magic bytes)
+     │
+     ▼
+┌────────────────────────────────────────────────────────────┐
+│ RAW/HEIC?           │ Standard Format?  │ Other?          │
+│ (CR2, NEF, ARW...)  │ (JPEG, PNG...)    │ (PDF, PSD...)   │
+└────────────────────────────────────────────────────────────┘
+        │                      │                  │
+        ▼                      ▼                  ▼
+Native thumbnail        Sharp resize()     MagickDecoder
+extraction             (libvips fast)     (slow fallback)
+(~5-10ms)             (~10-50ms)         (full decode)
+```
+
+**Thumbnail Support:**
+
+| Format Type | Thumbnail Method | Speed |
+|-------------|-----------------|-------|
+| RAW (CR2, NEF, ARW, ORF, RAF, DNG) | Native `unpack_thumb()` + `dcraw_make_mem_thumb()` | ✅ Fast |
+| HEIC/HEIF/AVIF | Native `heif_image_handle_get_thumbnail()` | ✅ Fast |
+| JPEG, PNG, WebP, GIF, TIFF, AVIF, BMP | Sharp `resize()` | ✅ Fast |
+| PDF, PSD, EXR, HDR, SVG, etc. | MagickDecoder resize | ⚠️ Slow |
+
+**API:**
+
+```javascript
+// Standalone function
+const thumb = await nImage.thumbnail(buffer, { size: 256 });
+
+// Pipeline method
+const thumb = await nImage('photo.cr2').thumbnail({ size: 256 });
+
+// Returns ImageData with width, height, channels, data, format
+```
 
 **Note:** All encoding is handled by Sharp (JPEG, PNG, WebP, AVIF, TIFF). nImage does not need separate encoders.

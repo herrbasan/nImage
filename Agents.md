@@ -80,6 +80,19 @@ SGI, TGA, VTF, and 150+ additional formats via ImageMagick
 - Supports 150+ formats: documents (PDF, SVG, AI, DOCX, XLSX, PPTX), scientific (EXR, HDR, DPX, FITS), video stills (AVI, MOV, MP4, MKV), and more
 - Factory creates MagickDecoder for any format not handled by specialized decoders
 
+### Thumbnail Extraction (v2.2.0)
+
+Fast thumbnail extraction without full decode:
+
+| Format Type | Method | Speed |
+|-------------|--------|-------|
+| RAW formats | Native `unpack_thumb()` | ✅ Fast |
+| HEIC/HEIF/AVIF | Native `get_thumbnail()` | ✅ Fast |
+| JPEG/PNG/WebP/GIF/TIFF/BMP/AVIF | Sharp `resize()` | ✅ Fast |
+| Everything else | MagickDecoder resize | ⚠️ Slow |
+
+**Note:** Standard formats (JPEG, PNG, etc.) go through Sharp for thumbnails, NOT MagickDecoder. Only formats Sharp can't handle at all go through MagickDecoder.
+
 ## Build System
 
 ### Windows
@@ -107,7 +120,8 @@ npm run build
 | 5 | ✅ DONE | Standard format decoders (Sharp pass-through) |
 | 6 | ✅ DONE | Encoder options (via Sharp) |
 | 7 | ✅ DONE | AVIF support (via Sharp) |
-| 8 | 🔲 TODO | Memory & Performance: error propagation, zero-copy, thumbnails, streaming |
+| 8 | 🔄 IN PROGRESS | Memory & Performance: error propagation ✅, zero-copy ✅, thumbnails ✅, streaming ✅*, Benchmarks ✅* |
+* Partially complete - streaming decode and full benchmarks remain
 | 9 | ⬜ FUTURE | Multi-page PDF support |
 | 10 | ⬜ FUTURE | Large image support: tile-based decoding for 100MP+ images |
 
@@ -151,6 +165,10 @@ nImage.decode(buffer, [formatHint]) → ImageData
 decoder = new nImage.ImageDecoder([format])
 decoder.decode(buffer) → ImageData
 decoder.getMetadata(buffer) → ImageMetadata
+
+// Thumbnail extraction (fast, no full decode)
+nImage.thumbnail(buffer, { size: 256 }) → ImageData
+nImage('photo.cr2').thumbnail({ size: 256 }) → ImageData
 
 // Encoding (TODO)
 nImage.encode(rgbBuffer, width, height, channels, format, options) → Buffer

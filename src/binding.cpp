@@ -383,6 +383,61 @@ static Napi::Value DecodeImage(const Napi::CallbackInfo& info) {
     return ImageDataToJS(env, output);
 }
 
+/**
+ * Extract thumbnail from an image
+ * Options:
+ *   - size: max dimension (default 256)
+ *   - format: optional format hint
+ */
+static Napi::Value GetThumbnail(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 1 || !info[0].IsBuffer()) {
+        Napi::TypeError::New(env, "Expected Buffer as first argument").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    int maxSize = 256;
+    ImageFormat format = ImageFormat::UNKNOWN;
+
+    if (info.Length() >= 2 && info[1].IsObject()) {
+        Napi::Object options = info[1].As<Napi::Object>();
+        if (options.Has("size") && options.Get("size").IsNumber()) {
+            maxSize = options.Get("size").As<Napi::Number>().Int32Value();
+        }
+        if (options.Has("format") && options.Get("format").IsString()) {
+            std::string formatStr = options.Get("format").As<Napi::String>().Utf8Value();
+            format = ImageFormatUtil::formatFromString(formatStr);
+        }
+    }
+
+    Napi::Buffer<uint8_t> inputBuffer = info[0].As<Napi::Buffer<uint8_t>>();
+    uint8_t* data = inputBuffer.Data();
+    size_t size = inputBuffer.Length();
+
+    std::unique_ptr<ImageDecoder> decoder;
+    if (format != ImageFormat::UNKNOWN) {
+        decoder = std::unique_ptr<ImageDecoder>(ImageDecoder::createDecoder(format));
+    } else {
+        decoder = std::unique_ptr<ImageDecoder>(ImageDecoder::createDecoderForBuffer(data, size));
+    }
+
+    if (!decoder) {
+        Napi::Error::New(env, "Unable to create decoder for thumbnail").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    ImageData output;
+    bool success = decoder->getThumbnail(data, size, maxSize, output);
+
+    if (!success) {
+        Napi::Error::New(env, "Thumbnail extraction failed: " + decoder->getError()).ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    return ImageDataToJS(env, output);
+}
+
 // ============================================================================
 // Module Initialization
 // ============================================================================
@@ -395,6 +450,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("detectFormat", Napi::Function::New(env, DetectFormat));
     exports.Set("getSupportedFormats", Napi::Function::New(env, GetSupportedFormats));
     exports.Set("decode", Napi::Function::New(env, DecodeImage));
+    exports.Set("thumbnail", Napi::Function::New(env, GetThumbnail));
 
     // Version info
     Napi::Object version = Napi::Object::New(env);
