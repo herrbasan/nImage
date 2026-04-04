@@ -438,54 +438,54 @@ bool LibRawDecoder::getThumbnail(const uint8_t* buffer, size_t size, int maxSize
         return false;
     }
 
-    if (raw->imgdata.thumbnail.tformat != LIBRAW_THUMBNAIL_JPEG) {
-        error_ = "Thumbnail is not JPEG format";
-        return false;
-    }
-
     int thumb_width = raw->imgdata.thumbnail.twidth;
     int thumb_height = raw->imgdata.thumbnail.theight;
-
-    if (thumb_width <= 0 || thumb_height <= 0) {
-        error_ = "Invalid thumbnail dimensions";
-        return false;
-    }
-
-    if (thumb_width <= maxSize && thumb_height <= maxSize) {
-        output.width = thumb_width;
-        output.height = thumb_height;
-        output.bitsPerChannel = 8;
-        output.channels = 3;
-        output.hasAlpha = false;
-        output.colorSpace = "sRGB";
-        output.format = "jpeg";
-        output.data.assign(raw->imgdata.thumbnail.thumb, raw->imgdata.thumbnail.thumb + raw->imgdata.thumbnail.tlength);
-        return true;
-    }
+    int thumb_length = raw->imgdata.thumbnail.tlength;
+    int thumb_format = raw->imgdata.thumbnail.tformat;
 
     libraw_processed_image_t* thumb = raw->dcraw_make_mem_thumb(nullptr);
-    if (!thumb) {
-        error_ = "Failed to create thumbnail memory";
-        return false;
-    }
+    if (thumb && thumb->type == LIBRAW_IMAGE_JPEG && thumb->data && thumb->width > 0 && thumb->height > 0) {
+        thumb_width = thumb->width;
+        thumb_height = thumb->height;
 
-    if (thumb->type != LIBRAW_IMAGE_JPEG || !thumb->data) {
+        if (thumb_width <= maxSize && thumb_height <= maxSize) {
+            output.width = thumb_width;
+            output.height = thumb_height;
+            output.bitsPerChannel = 8;
+            output.channels = 3;
+            output.hasAlpha = false;
+            output.colorSpace = "sRGB";
+            output.format = "jpeg";
+            output.data.assign(thumb->data, thumb->data + thumb->data_size);
+            LibRaw::dcraw_clear_mem(thumb);
+            return true;
+        }
         LibRaw::dcraw_clear_mem(thumb);
-        error_ = "Thumbnail is not JPEG or has no data";
+        error_ = "Thumbnail too large (" + std::to_string(thumb_width) + "x" + std::to_string(thumb_height) + ")";
+        return false;
+    } else if (thumb) {
+        LibRaw::dcraw_clear_mem(thumb);
+    }
+
+    if (thumb_format == LIBRAW_THUMBNAIL_JPEG && thumb_width > 0 && thumb_height > 0 && thumb_length > 0) {
+        if (thumb_width <= maxSize && thumb_height <= maxSize) {
+            output.width = thumb_width;
+            output.height = thumb_height;
+            output.bitsPerChannel = 8;
+            output.channels = 3;
+            output.hasAlpha = false;
+            output.colorSpace = "sRGB";
+            output.format = "jpeg";
+            output.data.assign(raw->imgdata.thumbnail.thumb, raw->imgdata.thumbnail.thumb + thumb_length);
+            return true;
+        }
+        error_ = "Thumbnail too large (" + std::to_string(thumb_width) + "x" + std::to_string(thumb_height) + ")";
         return false;
     }
 
-    output.width = thumb->width;
-    output.height = thumb->height;
-    output.bitsPerChannel = 8;
-    output.channels = 3;
-    output.hasAlpha = false;
-    output.colorSpace = "sRGB";
-    output.format = "jpeg";
-    output.data.assign(thumb->data, thumb->data + thumb->data_size);
-
-    LibRaw::dcraw_clear_mem(thumb);
-    return true;
+    error_ = "No thumbnail available (format=" + std::to_string(thumb_format) + ", " +
+             std::to_string(thumb_width) + "x" + std::to_string(thumb_height) + ")";
+    return false;
 }
 
 size_t LibRawDecoder::stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) {
@@ -798,12 +798,14 @@ bool LibHeifDecoder::getThumbnail(const uint8_t* buffer, size_t size, int maxSiz
         return false;
     }
 
-    int32_t thumb_id = heif_image_handle_get_thumbnail_id(handle, 0);
-    heif_image_handle_release(handle);
+    heif_item_id* thumb_ids = new heif_item_id[num_thumbnails];
+    heif_image_handle_get_list_of_thumbnail_IDs(handle, thumb_ids, num_thumbnails);
 
     heif_image_handle* thumb_handle = nullptr;
-    err = heif_image_handle_get_thumbnail(heif_context_, handle, thumb_id, &thumb_handle);
+    err = heif_image_handle_get_thumbnail(handle, thumb_ids[0], &thumb_handle);
+    delete[] thumb_ids;
     if (err.code != heif_error_Ok) {
+        heif_image_handle_release(handle);
         error_ = std::string("Failed to get thumbnail: ") + err.message;
         return false;
     }

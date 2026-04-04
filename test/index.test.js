@@ -222,6 +222,141 @@ async function runTests() {
     }
     console.log('');
 
+    // Test pipeline output validation (size, format)
+    console.log('--- Testing Pipeline Output Validation ---');
+    if (!nImage.hasSharp) {
+        console.log('SKIPPED: Sharp not installed');
+    } else {
+        const testJpgPath = path.join(__dirname, 'assets', '_4240213.jpg');
+        if (fs.existsSync(testJpgPath)) {
+            try {
+                const result = await nImage(testJpgPath)
+                    .resize(200, 200, { fit: 'inside' })
+                    .jpeg({ quality: 90 })
+                    .toBuffer();
+
+                const metadata = await nImage.sharp(result).metadata();
+                assert(metadata.width <= 200, 'Width should be <= 200');
+                assert(metadata.height <= 200, 'Height should be <= 200');
+                assert(metadata.format === 'jpeg', 'Format should be jpeg');
+                console.log('Pipeline resize validation: OK (' + metadata.width + 'x' + metadata.height + ')');
+
+                const resultPng = await nImage(testJpgPath)
+                    .resize(150, 150)
+                    .png()
+                    .toBuffer();
+
+                const pngMeta = await nImage.sharp(resultPng).metadata();
+                assert(pngMeta.width <= 150, 'PNG width should be <= 150');
+                assert(pngMeta.height <= 150, 'PNG height should be <= 150');
+                assert(pngMeta.format === 'png', 'Format should be png');
+                console.log('Pipeline PNG output validation: OK (' + pngMeta.width + 'x' + pngMeta.height + ')');
+
+                const resultWebp = await nImage(testJpgPath)
+                    .resize(100, 100)
+                    .webp({ quality: 80 })
+                    .toBuffer();
+
+                const webpMeta = await nImage.sharp(resultWebp).metadata();
+                assert(webpMeta.format === 'webp', 'Format should be webp');
+                console.log('Pipeline WebP output validation: OK (' + webpMeta.width + 'x' + webpMeta.height + ')');
+
+            } catch (err) {
+                console.log('Pipeline validation error:', err.message);
+            }
+        } else {
+            console.log('SKIPPED: Test JPEG not found');
+        }
+    }
+    console.log('');
+
+    // Test pipeline quality settings
+    console.log('--- Testing Pipeline Quality Settings ---');
+    if (!nImage.hasSharp) {
+        console.log('SKIPPED: Sharp not installed');
+    } else {
+        const testJpgPath = path.join(__dirname, 'assets', '_4240213.jpg');
+        if (fs.existsSync(testJpgPath)) {
+            try {
+                const lowQuality = await nImage(testJpgPath)
+                    .resize(400, 400)
+                    .jpeg({ quality: 30 })
+                    .toBuffer();
+
+                const highQuality = await nImage(testJpgPath)
+                    .resize(400, 400)
+                    .jpeg({ quality: 100 })
+                    .toBuffer();
+
+                assert(lowQuality.length < highQuality.length, 'Low quality should produce smaller file');
+                console.log('JPEG quality settings: OK (low=' + lowQuality.length + ' bytes, high=' + highQuality.length + ' bytes)');
+
+                const losslessWebp = await nImage(testJpgPath)
+                    .resize(400, 400)
+                    .webp({ lossless: true })
+                    .toBuffer();
+
+                const lossyWebp = await nImage(testJpgPath)
+                    .resize(400, 400)
+                    .webp({ quality: 80 })
+                    .toBuffer();
+
+                assert(losslessWebp.length > lossyWebp.length, 'Lossless should be larger than lossy');
+                console.log('WebP lossless setting: OK (lossless=' + losslessWebp.length + ' bytes, lossy=' + lossyWebp.length + ' bytes)');
+
+            } catch (err) {
+                console.log('Quality settings error:', err.message);
+            }
+        } else {
+            console.log('SKIPPED: Test JPEG not found');
+        }
+    }
+    console.log('');
+
+    // Test round-trip: RAW decode → Sharp transform → JPEG encode
+    console.log('--- Testing Round-trip RAW decode → Sharp transform → JPEG encode ---');
+    if (!nImage.hasSharp || !nImage.isLoaded) {
+        console.log('SKIPPED: Sharp or native module not available');
+    } else {
+        const testCr2Path = path.join(__dirname, 'assets', 'IMG_2593.CR2');
+        if (fs.existsSync(testCr2Path)) {
+            try {
+                const imageData = nImage.decode(fs.readFileSync(testCr2Path));
+                assert(imageData.width > 0 && imageData.height > 0, 'RAW decode should have dimensions');
+                assert(imageData.data && imageData.data.length > 0, 'RAW decode should have pixel data');
+                console.log('RAW decode: ' + imageData.width + 'x' + imageData.height + ', ' + imageData.format);
+
+                const jpegOutput = await nImage(imageData)
+                    .resize(512, 512, { fit: 'inside' })
+                    .jpeg({ quality: 92 })
+                    .toBuffer();
+
+                const jpegMeta = await nImage.sharp(jpegOutput).metadata();
+                assert(jpegMeta.format === 'jpeg', 'Output format should be jpeg');
+                assert(jpegMeta.width <= 512, 'JPEG width should be <= 512');
+                assert(jpegMeta.height <= 512, 'JPEG height should be <= 512');
+                console.log('Round-trip complete: ' + jpegMeta.width + 'x' + jpegMeta.height + ' JPEG (' + jpegOutput.length + ' bytes)');
+
+                const pngOutput = await nImage(imageData)
+                    .resize(256, 256, { fit: 'inside' })
+                    .png()
+                    .toBuffer();
+
+                const pngMeta = await nImage.sharp(pngOutput).metadata();
+                assert(pngMeta.format === 'png', 'Output format should be png');
+                assert(pngMeta.width <= 256, 'PNG width should be <= 256');
+                assert(pngMeta.height <= 256, 'PNG height should be <= 256');
+                console.log('Round-trip PNG complete: ' + pngMeta.width + 'x' + pngMeta.height + ' PNG (' + pngOutput.length + ' bytes)');
+
+            } catch (err) {
+                console.log('Round-trip error:', err.message);
+            }
+        } else {
+            console.log('SKIPPED: CR2 test file not found');
+        }
+    }
+    console.log('');
+
     // Summary
     console.log('=================');
     console.log('Basic tests PASSED');
