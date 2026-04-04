@@ -1,13 +1,13 @@
 # nImage Architecture Specification
 
-**Last Updated**: 2026-04-03
+**Last Updated**: 2026-04-04
 
-**Version**: 2.0.0 - Sharp integration complete
+**Version**: 2.1.0 - ImageMagick fallback complete (212 formats supported)
 
 ## Overview
 
 nImage is a native Node.js module (NAPI) for high-performance image processing. It provides:
-- **Decode**: RAW (CR2, NEF, ARW, ORF, RAF, DNG), HEIC/HEIF, and standard formats
+- **Decode**: RAW (CR2, NEF, ARW, ORF, RAF, DNG), HEIC/HEIF, and 150+ formats via ImageMagick
 - **Transform**: Via Sharp (resize, crop, rotate, composite)
 - **Encode**: JPEG, PNG, WebP, AVIF output
 
@@ -19,46 +19,45 @@ nImage is a **Sharp-compatible API wrapper** that adds native codec support for 
 User calls nImage API (Sharp-compatible)
          │
          ▼
-┌─────────────────────────────────────────┐
-│              nImage                       │
-│                                          │
-│  1. Detect input format                   │
-│  2. If RAW/HEIC → decode to RGB via NAPI  │
-│  3. Pass RGB buffer to Sharp              │
-│  4. Sharp handles all transforms/encode   │
-│  5. Return result to user                 │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                    nImage                            │
+│                                                      │
+│  1. Detect input format                             │
+│  2. If RAW → LibRawDecoder to RGB                   │
+│  3. If HEIC/AVIF → LibHeifDecoder to RGB           │
+│  4. If other format → MagickDecoder (ImageMagick)   │
+│  5. Pass RGB buffer to Sharp                         │
+│  6. Sharp handles all transforms/encode              │
+│  7. Return result to user                           │
+└─────────────────────────────────────────────────────┘
 ```
 
-**Sharp is the main show** for transformations and encoding. nImage exists to bridge the gap for RAW and HEIC formats that Sharp cannot decode natively.
+**ImageMagick is the catch-all fallback** for any format not handled by LibRaw or LibHeif. This enables support for 150+ additional formats including documents (PDF, SVG, AI, DOCX, XLSX, PPTX), scientific formats (EXR, HDR, DPX, FITS), and video stills (AVI, MOV, MP4, MKV).
 
 ### Why This Architecture?
 
 - **Sharp is already excellent** at transforms and common format encoding (JPEG, PNG, WebP, AVIF)
 - **Native codecs are complex**: RAW demosaicing and HEIC decoding require specialized libraries (libraw, libheif)
-- **Single API surface**: Users interact with nImage exactly as they would with Sharp, but gain RAW/HEIC support
+- **ImageMagick fills the gaps**: For formats Sharp can't handle (PDF, SVG, documents, scientific formats), MagickCore provides comprehensive support
+- **Single API surface**: Users interact with nImage exactly as they would with Sharp, but gain support for 212 formats
 - **Maintainability**: Sharp's libvips-based pipeline is well-tested; we only maintain the exotic codec integration
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         nImage Module                            │
-│                                                                  │
-│  Input              nImage处理          Sharp处理         Output   │
-│  ──────            ───────           ─────────        ─────     │
-│  RAW ─────────────► [Decode] ────────► [Transform] ──► JPEG     │
-│  HEIC ───────────►              ────► [Resize]  ────► PNG      │
-│  HEIF                             ───► [Crop]   ────► WebP     │
-│  JPEG ────────────────────────────────────────────► AVIF       │
-│  PNG  ────────────────────────────────────────────► (any)       │
-│  WebP ────────────────────────────────────────────► (any)      │
-│  TIFF ────────────────────────────────────────────► (any)      │
-└─────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                              nImage Module                                     │
+│                                                                               │
+│  Input              Specialized          Sharp处理              Output           │
+│  ──────             ───────────         ─────────            ─────            │
+│  RAW ─────────────► [LibRawDecoder]──► [Transform]────────► JPEG            │
+│  HEIC/AVIF ───────► [LibHeifDecoder]──► [Resize]──────────► PNG            │
+│  JPEG/PNG/WebP ───► [Sharp]──────────► [Crop]────────────► WebP            │
+│  PDF/SVG/DOCX ────► [MagickDecoder]──► [Rotate]─────────► AVIF            │
+│  EXR/HDR/CIN ─────► (ImageMagick)────► [Any Op]──────────► (any)           │
+│  150+ formats ────► (fallback)────────► ──────────────────► ────────────────►│
+└───────────────────────────────────────────────────────────────────────────────┘
 
-nImage处理: libraw/libheif decoding to RGB/RGBA
-Sharp处理: All transformations and format encoding
-
-User-facing API is Sharp-compatible. RAW/HEIC are transparently decoded
-by nImage's native codecs, then passed to Sharp for the pipeline.
+MagickDecoder handles all formats not covered by LibRaw or LibHeif.
+User-facing API is Sharp-compatible.
 ```
 
 ## Module Structure
@@ -66,53 +65,131 @@ by nImage's native codecs, then passed to Sharp for the pipeline.
 ```
 nImage/
 ├── src/
-│   ├── decoder.h           # Base decoder class and structures
-│   ├── decoder.cpp         # Decoder implementations (LibRaw, LibHeif)
+│   ├── decoder.h           # Base decoder class, ImageFormat enum (212 formats)
+│   ├── decoder.cpp         # LibRawDecoder, LibHeifDecoder, MagickDecoder
 │   ├── encoder.h           # Base encoder class and structures
 │   ├── encoder.cpp         # Encoder implementations (JPEG, PNG, WebP)
-│   ├── avif_encoder.cpp    # AVIF encoder (via libaom)
 │   └── binding.cpp         # NAPI bindings
 ├── lib/
-│   └── index.js           # JavaScript entry point
+│   └── index.js           # JavaScript entry point + Sharp wrapper
 ├── dist/                  # Pre-compiled binaries (tracked in git)
 │   ├── nimage.node       # Native module
-│   └── *.dll             # Runtime DLLs
+│   └── *.dll             # 116 runtime DLLs
 ├── deps/                  # External dependencies (gitignored)
 ├── scripts/
 │   ├── setup.ps1         # Full setup script
 │   └── build.js          # Custom build script (direct g++)
 ├── test/
 │   ├── index.test.js     # Unit tests
-│   ├── benchmark.js      # Performance benchmarks
-│   └── assets/          # Test images
+│   ├── benchmark.js       # Performance benchmarks
+│   └── assets/           # Test images
 ├── docs/                 # Documentation
 └── package.json
 ```
 
-## Supported Formats
+## Supported Formats (212 total)
 
-### Input Formats (Decoding)
+### RAW Formats (LibRaw) - 22 formats
 
-| Format | Library | Status | Output |
-|--------|---------|--------|--------|
-| Canon CR2/CRW | libraw | ✅ Working | RGB |
-| Nikon NEF | libraw | ✅ Working | RGB |
-| Sony ARW | libraw | ✅ Working | RGB |
-| Olympus ORF | libraw | ✅ Working | RGB |
-| Fujifilm RAF | libraw | ✅ Working | RGB |
-| Panasonic RW2 | libraw | ✅ Working | RGB |
-| Adobe DNG | libraw | ✅ Working | RGB |
-| Pentax PEF | libraw | ✅ Working | RGB |
-| Samsung SRW | libraw | ✅ Working | RGB |
-| Leica RWL | libraw | ✅ Working | RGB |
-| HEIC | libheif | ✅ Working | RGB/RGBA |
-| HEIF | libheif | ✅ Working | RGB/RGBA |
-| AVIF | libheif+aom | ✅ Working | RGB/RGBA |
-| JPEG | Sharp | ✅ Working | RGB |
-| PNG | Sharp | ✅ Working | RGB/RGBA |
-| WebP | Sharp | ✅ Working | RGB/RGBA |
-| TIFF | Sharp | ✅ Working | RGB/RGBA |
-| GIF | Sharp | ✅ Working | RGB/RGBA |
+| Format | Library | Status |
+|--------|---------|--------|
+| Canon CR2/CRW | libraw | ✅ Working |
+| Nikon NEF/NRW | libraw | ✅ Working |
+| Sony ARW/SR2 | libraw | ✅ Working |
+| Olympus ORF | libraw | ✅ Working |
+| Fujifilm RAF | libraw | ✅ Working |
+| Panasonic RW2 | libraw | ✅ Working |
+| Adobe DNG | libraw | ✅ Working |
+| Pentax PEF/PEFR | libraw | ✅ Working |
+| Samsung SRW | libraw | ✅ Working |
+| Leica RWL/MRAW | libraw | ✅ Working |
+| Minolta MRW | libraw | ✅ Working |
+| Epson ERF | libraw | ✅ Working |
+| Hasselblad 3FR | libraw | ✅ Working |
+| Kodak K25/KDC | libraw | ✅ Working |
+| Mamiya MEF | libraw | ✅ Working |
+| Leaf MOS | libraw | ✅ Working |
+| Canon RRF | libraw | ✅ Working |
+| Rawzor RWZ | libraw | ✅ Working |
+| Gremlin GRB | libraw | ✅ Working |
+
+### HEIC/AVIF (LibHeif) - 3 formats
+
+| Format | Library | Status |
+|--------|---------|--------|
+| HEIC | libheif | ✅ Working |
+| HEIF | libheif | ✅ Working |
+| AVIF | libheif | ✅ Working |
+
+### Standard Formats (Sharp) - 9 formats
+
+| Format | Library | Status |
+|--------|---------|--------|
+| JPEG | Sharp | ✅ Working |
+| PNG | Sharp | ✅ Working |
+| WebP | Sharp | ✅ Working |
+| TIFF | Sharp | ✅ Working |
+| GIF | Sharp | ✅ Working |
+| BMP | Sharp | ✅ Working |
+| JXL (JPEG XL) | Sharp | ✅ Working |
+| JP2 (JPEG 2000) | Sharp | ✅ Working |
+
+### Document Formats (ImageMagick) - 13 formats
+
+| Format | Library | Status |
+|--------|---------|--------|
+| PDF | MagickCore | ✅ Working |
+| SVG | MagickCore | ✅ Working |
+| AI | MagickCore | ✅ Working |
+| DOC/DOCX | MagickCore | ✅ Working |
+| XLS/XLSX | MagickCore | ✅ Working |
+| PPT/PPTX | MagickCore | ✅ Working |
+| EPS | MagickCore | ✅ Working |
+| XPS | MagickCore | ✅ Working |
+| PSD/PSB | MagickCore | ✅ Working |
+
+### Scientific Formats (ImageMagick) - 20 formats
+
+| Format | Library | Status |
+|--------|---------|--------|
+| EXR | MagickCore | ✅ Working |
+| HDR | MagickCore | ✅ Working |
+| DPX | MagickCore | ✅ Working |
+| FITS | MagickCore | ✅ Working |
+| FLIF | MagickCore | ✅ Working |
+| CIN | MagickCore | ✅ Working |
+| JP2/J2K | MagickCore | ✅ Working |
+| MIFF | MagickCore | ✅ Working |
+| MPC | MagickCore | ✅ Working |
+| PCD | MagickCore | ✅ Working |
+| PFM | MagickCore | ✅ Working |
+| PICT | MagickCore | ✅ Working |
+| PPM | MagickCore | ✅ Working |
+| PSP | MagickCore | ✅ Working |
+| SGI | MagickCore | ✅ Working |
+| TGA | MagickCore | ✅ Working |
+| VTF | MagickCore | ✅ Working |
+| BigTIFF | MagickCore | ✅ Working |
+
+### Video Stills (ImageMagick) - 12 formats
+
+| Format | Library | Status |
+|--------|---------|--------|
+| AVI | MagickCore | ✅ Working |
+| MOV | MagickCore | ✅ Working |
+| MP4/M4V | MagickCore | ✅ Working |
+| MPG/MPEG | MagickCore | ✅ Working |
+| WMV | MagickCore | ✅ Working |
+| FLV | MagickCore | ✅ Working |
+| MKV | MagickCore | ✅ Working |
+| MNG | MagickCore | ✅ Working |
+| JNG | MagickCore | ✅ Working |
+| MPO | MagickCore | ✅ Working |
+| DCM | MagickCore | ✅ Working |
+
+### Other Formats (ImageMagick) - 150+ formats
+
+AAI, ART, BLP, BMP2, BMP3, CUR, DIB, DDS, DJVU, EMF, GRAY, GRAYA, ICB, ICC, ICO, MAT, MATTE, MONO, PAL, PALM, PBM, PCDS, PDB, PCX, DCX, PFA, PFB, PGM, PICON, PIX, PJPEG, PLASMA, PNG8, PNG24, PNG32, PNM, RAS, RGB, RGBA, RGB565, RGBA555, RLE, SFW, SUN, TILE, WBMP, WMF, WPG, XBM, XPM, XWD, and many more.
 
 ### Output Formats (Encoding)
 
@@ -197,14 +274,20 @@ struct EncoderOptions {
 
 ### JavaScript API
 
-nImage presents a **Sharp-compatible API**. Internally it uses Sharp for transforms and encoding, but adds RAW/HEIC support by decoding those formats first.
+nImage presents a **Sharp-compatible API**. Internally it uses Sharp for transforms and encoding, but adds RAW/HEIC/ImageMagick support by decoding those formats first.
 
 ```javascript
 const nImage = require('nimage');
 
-// Sharp-compatible pipeline (nImage handles RAW/HEIC internally)
+// Sharp-compatible pipeline (nImage handles RAW/HEIC/ImageMagick formats internally)
 const result = await nImage('photo.cr2')  // RAW file
     .resize(1024, 1024, { fit: 'inside' })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
+// PDF to image
+const pdfThumb = await nImage('document.pdf')
+    .resize(256, 256, { fit: 'cover' })
     .jpeg({ quality: 85 })
     .toBuffer();
 
@@ -221,6 +304,9 @@ const result = await nImage('photo.jpg')
 
 // Detection (always available - pure JS)
 nImage.detectFormat(buffer) → { format, confidence, mimeType }
+
+// Get all supported formats
+nImage.getSupportedFormats() → ['cr2', 'nef', 'heic', 'pdf', ...] // 212 formats
 
 // Low-level decode (when you need raw pixel access)
 nImage.decode(buffer, [formatHint]) → ImageData
@@ -251,15 +337,22 @@ const thumb = await nImage('photo.cr2')
     .jpeg({ quality: 80 })
     .toBuffer();
 
+// Pipeline with PDF input - ImageMagick rasterizes to image
+const pdfThumb = await nImage('document.pdf')
+    .resize(256, 256, { fit: 'cover' })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
 // Pipeline with HEIC input
 const optimized = await nImage('image.heic')
     .resize(1920, 1080, { fit: 'inside' })
     .webp({ quality: 85 })
     .toBuffer();
 
-// Low-level: Decode RAW to get raw RGB for custom processing
-const imageData = nImage.decode(fs.readFileSync('photo.cr2'));
-console.log(imageData.width, imageData.height);  // 6000, 4000
+// Low-level: Decode any format to get raw RGB for custom processing
+const imageData = nImage.decode(fs.readFileSync('document.pdf'));
+console.log(imageData.width, imageData.height);
+console.log(imageData.format);  // 'pdf'
 
 // Then pass to Sharp manually if needed
 const sharp = require('sharp');
@@ -277,42 +370,56 @@ const transformed = await sharp(Buffer.from(imageData.data), {
 
 ## Pipeline Integration
 
+### Decoder Priority Chain
+
+```
+Format Detection
+       │
+       ▼
+┌─────────────────────────────────────┐
+│ Try LibRaw (RAW formats)             │──▶ Success ──▶ RGB → Sharp
+├─────────────────────────────────────┤
+│ Try LibHeif (HEIC/HEIF/AVIF)       │──▶ Success ──▶ RGB → Sharp
+├─────────────────────────────────────┤
+│ Try MagickDecoder (ALL other)       │──▶ Success ──▶ RGB → Sharp
+└─────────────────────────────────────┘
+                 │
+                 ▼
+            Error / Unsupported
+```
+
 ### MediaService Pipeline
 
 ```
 HTTP Request
-    │
-    ▼
+     │
+     ▼
 ┌─────────────────┐
 │ Format Detection │ (nImage.detectFormat)
 └────────┬────────┘
          │
     ┌────┴────┐
-    │ RAW/HEIC?│
+    │ Format?  │
     └────┬────┘
-    Yes  │  No
-    │    │
-    ▼    │
-┌──────────────┐    ┌─────────────────┐
-│ nImage.decode│    │ Sharp (direct)  │
-└────┬─────────┘    └────────┬────────┘
-     │                       │
-     ▼                       ▼
-┌─────────────┐        ┌─────────────┐
-│ Raw RGB     │        │ Sharp handles│
-│ Buffer      │        │ everything   │
-└────┬────────┘        └──────┬──────┘
-     │                        │
-     ▼                        │
-┌─────────────────┐            │
-│ Sharp.transform │◄───────────┤
-│ (resize, crop)  │            │
-└────────┬────────┘            │
-         │                    │
-         ▼                    │
-┌─────────────────┐            │
-│ nImage.encode   │◄───────────┘
-│ or Sharp.encode │
+         │
+    ┌────┼────┬────────┐
+    │    │    │        │
+    ▼    ▼    ▼        ▼
+  RAW  HEIC  Std   Other
+    │    │    │      │
+    │    │    │      └──► [MagickDecoder] ─► RGB
+    │    │    └──► [Sharp] ────────────────► RGB
+    │    └──► [LibHeifDecoder] ───────────► RGB
+    └──► [LibRawDecoder] ─────────────────► RGB
+         │
+         ▼
+┌─────────────────┐
+│ Sharp Transform │ (resize, crop, rotate)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Sharp Encode    │ (jpeg, png, webp, avif)
 └────────┬────────┘
          │
          ▼
@@ -326,6 +433,7 @@ HTTP Request
 | Format detection | < 1 µs | Equivalent |
 | RAW decode (20MP) | < 600ms | FFmpeg: ~800ms |
 | HEIC decode (12MP) | < 150ms | FFmpeg: ~400ms |
+| ImageMagick decode | Varies | N/A |
 | JPEG encode | < 100ms | Equivalent |
 | PNG encode | < 150ms | Equivalent |
 
@@ -337,12 +445,12 @@ HTTP Request
 |---------|---------|---------|
 | libraw 0.22 | mingw-w64-x86_64-libraw | RAW decoding |
 | libheif 1.21 | mingw-w64-x86_64-libheif | HEIC/HEIF decoding |
+| ImageMagick 7 | mingw-w64-x86_64-imagemagick | 150+ format fallback |
 | libjpeg | mingw-w64-x86_64-libjpeg | JPEG encode/decode |
 | libpng | mingw-w64-x86_64-libpng | PNG encode/decode |
 | libwebp | mingw-w64-x86_64-libwebp | WebP encode/decode |
 | libtiff | mingw-w64-x86_64-libtiff | TIFF encode/decode |
 | libaom | mingw-w64-x86_64-aom | AV1/AVIF encode |
-| aom | (from libheif dep) | AVIF decode |
 
 ### Runtime Dependencies (in dist/)
 
@@ -351,15 +459,16 @@ dist/
 ├── nimage.node              # Main module
 ├── libraw-24.dll           # RAW decoding
 ├── libheif.dll             # HEIC/HEIF decoding
+├── libMagickCore-7.Q16HDRI-10.dll  # ImageMagick core
 ├── libjpeg-8.dll           # JPEG codec
 ├── libpng16-16.dll         # PNG codec
 ├── libwebp-7.dll           # WebP codec
 ├── libtiff-6.dll           # TIFF codec
 ├── libaom.dll              # AV1 codec
-├── libsvtav1enc-4.dll      # AV1 encoder
 ├── libde265-0.dll          # HEVC decoder
-├── lcms2-2.dll             # Color management
-└── ... (50+ other DLLs)
+├── libx265.dll             # H.265 codec
+├── libx264.dll             # H.264 codec
+└── ... (100+ other DLLs)
 ```
 
 ## Build System
@@ -377,7 +486,7 @@ npm run build
 ### Linux
 
 ```bash
-sudo apt install libraw-dev libheif-dev libjpeg-dev libpng-dev libwebp-dev libtiff-dev
+sudo apt install libraw-dev libheif-dev libjpeg-dev libpng-dev libwebp-dev libtiff-dev libmagick-dev
 npm run build
 ```
 
@@ -393,10 +502,12 @@ npm run build
 
 ## Future Enhancements
 
+- [ ] Multi-page PDF support (render any page to image)
 - [ ] LittleCMS integration for ICC color management
 - [ ] Tile-based decoding for memory efficiency
 - [ ] Streaming decode/encode for large files
 - [ ] Thumbnail extraction without full decode
 - [ ] EXIF manipulation
 - [ ] Multi-page TIFF support
-- [ ] GIF encoding
+
+**Note:** All encoding is handled by Sharp (JPEG, PNG, WebP, AVIF, TIFF). nImage does not need separate encoders.

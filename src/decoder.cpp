@@ -120,6 +120,21 @@ ImageDecoder* ImageDecoder::createDecoder(ImageFormat format) {
         case ImageFormat::PEFR:
         case ImageFormat::SRW:
         case ImageFormat::RWL:
+        case ImageFormat::CRW:
+        case ImageFormat::MRW:
+        case ImageFormat::NRW:
+        case ImageFormat::PEF:
+        case ImageFormat::ERF:
+        case ImageFormat::GRB:
+        case ImageFormat::F3FR:
+        case ImageFormat::K25:
+        case ImageFormat::KDC:
+        case ImageFormat::MEF:
+        case ImageFormat::MOS:
+        case ImageFormat::MRAW:
+        case ImageFormat::RRF:
+        case ImageFormat::SR2:
+        case ImageFormat::RWZ:
             return new LibRawDecoder();
 
         case ImageFormat::HEIC:
@@ -127,25 +142,17 @@ ImageDecoder* ImageDecoder::createDecoder(ImageFormat format) {
         case ImageFormat::AVIF:
             return new LibHeifDecoder();
 
-        case ImageFormat::PSD:
-        case ImageFormat::PDF:
-        case ImageFormat::SVG:
-        case ImageFormat::EXR:
-        case ImageFormat::HDR:
-        case ImageFormat::BIGTIFF:
-            return new MagickDecoder();
-
         default:
-            return nullptr;
+            return new MagickDecoder();
     }
 }
 
 ImageDecoder* ImageDecoder::createDecoderForBuffer(const uint8_t* buffer, size_t size) {
     FormatDetection detected = detectFormat(buffer, size);
-    if (detected.format == ImageFormat::UNKNOWN) {
-        return nullptr;
+    if (detected.format != ImageFormat::UNKNOWN) {
+        return createDecoder(detected.format);
     }
-    return createDecoder(detected.format);
+    return new MagickDecoder();
 }
 
 // ============================================================================
@@ -837,17 +844,7 @@ bool MagickDecoder::processImage(ImageData& output) {
 }
 
 bool MagickDecoder::supportsFormat(ImageFormat format) const {
-    switch (format) {
-        case ImageFormat::PSD:
-        case ImageFormat::PDF:
-        case ImageFormat::SVG:
-        case ImageFormat::EXR:
-        case ImageFormat::HDR:
-        case ImageFormat::BIGTIFF:
-            return true;
-        default:
-            return false;
-    }
+    return true;
 }
 
 // ============================================================================
@@ -864,19 +861,205 @@ ImageFormat formatFromString(const std::string& format) {
     if (format == "raf") return ImageFormat::RAF;
     if (format == "rw2") return ImageFormat::RW2;
     if (format == "dng") return ImageFormat::DNG;
+    if (format == "pefr" || format == "pef") return ImageFormat::PEFR;
+    if (format == "srw") return ImageFormat::SRW;
+    if (format == "rwl") return ImageFormat::RWL;
+    if (format == "crw") return ImageFormat::CRW;
+    if (format == "mrw") return ImageFormat::MRW;
+    if (format == "nrw") return ImageFormat::NRW;
+    if (format == "erf") return ImageFormat::ERF;
+    if (format == "3fr") return ImageFormat::F3FR;
+    if (format == "k25") return ImageFormat::K25;
+    if (format == "kdc") return ImageFormat::KDC;
+    if (format == "mef") return ImageFormat::MEF;
+    if (format == "mos") return ImageFormat::MOS;
+    if (format == "mraw") return ImageFormat::MRAW;
+    if (format == "rrf") return ImageFormat::RRF;
+    if (format == "sr2") return ImageFormat::SR2;
+    if (format == "rwz") return ImageFormat::RWZ;
     if (format == "heic") return ImageFormat::HEIC;
     if (format == "heif") return ImageFormat::HEIF;
     if (format == "avif") return ImageFormat::AVIF;
-    if (format == "jpeg" || format == "jpg") return ImageFormat::JPEG;
+    if (format == "jpeg" || format == "jpg" || format == "jpe") return ImageFormat::JPEG;
     if (format == "png") return ImageFormat::PNG;
     if (format == "tiff" || format == "tif") return ImageFormat::TIFF;
     if (format == "webp") return ImageFormat::WEBP;
     if (format == "gif") return ImageFormat::GIF;
+    if (format == "bmp") return ImageFormat::BMP;
+    if (format == "jxl") return ImageFormat::JXL;
+    if (format == "jp2" || format == "j2k") return ImageFormat::JP2;
     if (format == "psd") return ImageFormat::PSD;
     if (format == "pdf") return ImageFormat::PDF;
     if (format == "svg") return ImageFormat::SVG;
+    if (format == "ai") return ImageFormat::AI;
+    if (format == "eps") return ImageFormat::EPS;
+    if (format == "epdf") return ImageFormat::EPDF;
+    if (format == "epi") return ImageFormat::EPI;
+    if (format == "epsf") return ImageFormat::EPSF;
+    if (format == "xps") return ImageFormat::XPS;
     if (format == "exr") return ImageFormat::EXR;
     if (format == "hdr") return ImageFormat::HDR;
+    if (format == "bigtiff" || format == "btf") return ImageFormat::BIGTIFF;
+    if (format == "cin") return ImageFormat::CIN;
+    if (format == "dpx") return ImageFormat::DPX;
+    if (format == "fits" || format == "fts" || format == "ftc") return ImageFormat::FITS;
+    if (format == "flif") return ImageFormat::FLIF;
+    if (format == "miff") return ImageFormat::MIFF;
+    if (format == "mpc") return ImageFormat::MPC;
+    if (format == "pcd") return ImageFormat::PCD;
+    if (format == "pfm") return ImageFormat::PFM;
+    if (format == "pict" || format == "pct") return ImageFormat::PICT;
+    if (format == "ppm" || format == "pnm") return ImageFormat::PPM;
+    if (format == "psb") return ImageFormat::PSB;
+    if (format == "psp") return ImageFormat::PSP;
+    if (format == "sgi" || format == "rgb" || format == "bw") return ImageFormat::SGI;
+    if (format == "tga" || format == "targa") return ImageFormat::TGA;
+    if (format == "vtf") return ImageFormat::VTF;
+    if (format == "bmp2") return ImageFormat::BMP2;
+    if (format == "bmp3") return ImageFormat::BMP3;
+    if (format == "dib") return ImageFormat::DIB;
+    if (format == "pjpeg") return ImageFormat::PJPEG;
+    if (format == "png8") return ImageFormat::PNG8;
+    if (format == "png24") return ImageFormat::PNG24;
+    if (format == "png32") return ImageFormat::PNG32;
+    if (format == "gif87") return ImageFormat::GIF87;
+    if (format == "gray") return ImageFormat::GRAY;
+    if (format == "graya") return ImageFormat::GRAYA;
+    if (format == "cmyk") return ImageFormat::CMYK;
+    if (format == "cmyka") return ImageFormat::CMYKA;
+    if (format == "pcx") return ImageFormat::PCX;
+    if (format == "dcx") return ImageFormat::DCX;
+    if (format == "sun" || format == "ras") return ImageFormat::SUN;
+    if (format == "ras") return ImageFormat::RAS;
+    if (format == "rgb565") return ImageFormat::RGB565;
+    if (format == "rgba") return ImageFormat::RGBA;
+    if (format == "rgba555") return ImageFormat::RGBA555;
+    if (format == "rgb") return ImageFormat::RGB;
+    if (format == "pbm") return ImageFormat::PBM;
+    if (format == "pgm") return ImageFormat::PGM;
+    if (format == "xbm") return ImageFormat::XBM;
+    if (format == "xpm") return ImageFormat::XPM;
+    if (format == "xwd") return ImageFormat::XWD;
+    if (format == "wbmp") return ImageFormat::WBMP;
+    if (format == "avs") return ImageFormat::AVS;
+    if (format == "dds") return ImageFormat::DDS;
+    if (format == "djvu" || format == "djv") return ImageFormat::DJVU;
+    if (format == "svgz") return ImageFormat::SVGZ;
+    if (format == "wmf") return ImageFormat::WMF;
+    if (format == "emf") return ImageFormat::EMF;
+    if (format == "cur") return ImageFormat::CUR;
+    if (format == "ico") return ImageFormat::ICO;
+    if (format == "avi") return ImageFormat::AVI;
+    if (format == "mpg" || format == "mpeg") return ImageFormat::MPG;
+    if (format == "mov") return ImageFormat::MOV;
+    if (format == "mp4" || format == "m4v") return ImageFormat::MP4;
+    if (format == "wmv") return ImageFormat::WMV;
+    if (format == "flv") return ImageFormat::FLV;
+    if (format == "mkv") return ImageFormat::MKV;
+    if (format == "mng") return ImageFormat::MNG;
+    if (format == "jng") return ImageFormat::JNG;
+    if (format == "mpo") return ImageFormat::MPO;
+    if (format == "doc") return ImageFormat::DOC;
+    if (format == "docx") return ImageFormat::DOCX;
+    if (format == "xls") return ImageFormat::XLS;
+    if (format == "xlsx") return ImageFormat::XLSX;
+    if (format == "ppt") return ImageFormat::PPT;
+    if (format == "pptx") return ImageFormat::PPTX;
+    if (format == "aai") return ImageFormat::AAI;
+    if (format == "art") return ImageFormat::ART;
+    if (format == "blp") return ImageFormat::BLP;
+    if (format == "brf") return ImageFormat::BRF;
+    if (format == "cals") return ImageFormat::CALS;
+    if (format == "caption") return ImageFormat::CAPTION;
+    if (format == "clip") return ImageFormat::CLIP;
+    if (format == "dcm") return ImageFormat::DCM;
+    if (format == "dot") return ImageFormat::DOT;
+    if (format == "dpr") return ImageFormat::DPR;
+    if (format == "font" || format == "fnt") return ImageFormat::FONT;
+    if (format == "fpx") return ImageFormat::FPX;
+    if (format == "fractal") return ImageFormat::FRACTAL;
+    if (format == "gradient") return ImageFormat::GRADIENT;
+    if (format == "h") return ImageFormat::H;
+    if (format == "hald") return ImageFormat::HALD;
+    if (format == "hcl") return ImageFormat::HCL;
+    if (format == "histogram") return ImageFormat::HISTOGRAM;
+    if (format == "hrz") return ImageFormat::HRZ;
+    if (format == "htm" || format == "html") return ImageFormat::HTML;
+    if (format == "icb") return ImageFormat::ICB;
+    if (format == "icc") return ImageFormat::ICC;
+    if (format == "icer") return ImageFormat::ICER;
+    if (format == "info") return ImageFormat::INFO;
+    if (format == "inline") return ImageFormat::INLINE;
+    if (format == "ipl") return ImageFormat::IPL;
+    if (format == "isobrl") return ImageFormat::ISOBRL;
+    if (format == "jbg") return ImageFormat::JBG;
+    if (format == "jnx") return ImageFormat::JNX;
+    if (format == "jpm") return ImageFormat::JPM;
+    if (format == "jps") return ImageFormat::JPS;
+    if (format == "jpx") return ImageFormat::JPX;
+    if (format == "k") return ImageFormat::K;
+    if (format == "kvec") return ImageFormat::KVEC;
+    if (format == "label") return ImageFormat::LABEL;
+    if (format == "linux") return ImageFormat::LINUX;
+    if (format == "mac") return ImageFormat::MAC;
+    if (format == "map") return ImageFormat::MAP;
+    if (format == "mat") return ImageFormat::MAT;
+    if (format == "matte") return ImageFormat::MATTE;
+    if (format == "mono") return ImageFormat::MONO;
+    if (format == "msl") return ImageFormat::MSL;
+    if (format == "mtv") return ImageFormat::MTV;
+    if (format == "mvg") return ImageFormat::MVG;
+    if (format == "null") return ImageFormat::NULLIMG;
+    if (format == "ora") return ImageFormat::ORA;
+    if (format == "otb") return ImageFormat::OTB;
+    if (format == "pal") return ImageFormat::PAL;
+    if (format == "palm") return ImageFormat::PALM;
+    if (format == "pcds") return ImageFormat::PCDS;
+    if (format == "pdb") return ImageFormat::PDB;
+    if (format == "pfa") return ImageFormat::PFA;
+    if (format == "pfb") return ImageFormat::PFB;
+    if (format == "picon") return ImageFormat::PICON;
+    if (format == "pix") return ImageFormat::PIX;
+    if (format == "plasma") return ImageFormat::PLASMA;
+    if (format == "pocketmod") return ImageFormat::POCKETMOD;
+    if (format == "ps") return ImageFormat::PS;
+    if (format == "ps2") return ImageFormat::PS2;
+    if (format == "ps3") return ImageFormat::PS3;
+    if (format == "ptif") return ImageFormat::PTIF;
+    if (format == "pwp") return ImageFormat::PWP;
+    if (format == "rgf") return ImageFormat::RGF;
+    if (format == "rla") return ImageFormat::RLA;
+    if (format == "rpm") return ImageFormat::RPM;
+    if (format == "rsle") return ImageFormat::RSLE;
+    if (format == "sfw") return ImageFormat::SFW;
+    if (format == "shtml") return ImageFormat::SHTML;
+    if (format == "stream") return ImageFormat::STREAM;
+    if (format == "text") return ImageFormat::TEXT;
+    if (format == "tile") return ImageFormat::TILE;
+    if (format == "tim") return ImageFormat::TIM;
+    if (format == "tm2") return ImageFormat::TM2;
+    if (format == "ttc") return ImageFormat::TTC;
+    if (format == "ttf") return ImageFormat::TTF;
+    if (format == "txt") return ImageFormat::TXT;
+    if (format == "ubrl") return ImageFormat::UBRL;
+    if (format == "ubrl6") return ImageFormat::UBRL6;
+    if (format == "uil") return ImageFormat::UIL;
+    if (format == "uyvy") return ImageFormat::UYVY;
+    if (format == "vda") return ImageFormat::VDA;
+    if (format == "viff" || format == "vif") return ImageFormat::VIFF;
+    if (format == "vips") return ImageFormat::VIPS;
+    if (format == "wdp") return ImageFormat::WDP;
+    if (format == "wing") return ImageFormat::WING;
+    if (format == "wpg") return ImageFormat::WPG;
+    if (format == "x") return ImageFormat::X;
+    if (format == "xc") return ImageFormat::XC;
+    if (format == "xcf") return ImageFormat::XCF;
+    if (format == "xv") return ImageFormat::XV;
+    if (format == "yuv") return ImageFormat::YUV;
+    if (format == "yuva") return ImageFormat::YUVA;
+    if (format == "g") return ImageFormat::G;
+    if (format == "g3") return ImageFormat::G3;
+    if (format == "g4") return ImageFormat::G4;
     return ImageFormat::UNKNOWN;
 }
 
@@ -892,6 +1075,21 @@ std::string formatToString(ImageFormat format) {
         case ImageFormat::PEFR: return "pef";
         case ImageFormat::SRW: return "srw";
         case ImageFormat::RWL: return "rwl";
+        case ImageFormat::CRW: return "crw";
+        case ImageFormat::MRW: return "mrw";
+        case ImageFormat::NRW: return "nrw";
+        case ImageFormat::PEF: return "pef";
+        case ImageFormat::ERF: return "erf";
+        case ImageFormat::GRB: return "grb";
+        case ImageFormat::F3FR: return "3fr";
+        case ImageFormat::K25: return "k25";
+        case ImageFormat::KDC: return "kdc";
+        case ImageFormat::MEF: return "mef";
+        case ImageFormat::MOS: return "mos";
+        case ImageFormat::MRAW: return "mraw";
+        case ImageFormat::RRF: return "rrf";
+        case ImageFormat::SR2: return "sr2";
+        case ImageFormat::RWZ: return "rwz";
         case ImageFormat::HEIC: return "heic";
         case ImageFormat::HEIF: return "heif";
         case ImageFormat::AVIF: return "avif";
@@ -900,12 +1098,193 @@ std::string formatToString(ImageFormat format) {
         case ImageFormat::TIFF: return "tiff";
         case ImageFormat::WEBP: return "webp";
         case ImageFormat::GIF: return "gif";
+        case ImageFormat::BMP: return "bmp";
+        case ImageFormat::JXL: return "jxl";
+        case ImageFormat::JP2: return "jp2";
         case ImageFormat::PSD: return "psd";
         case ImageFormat::PDF: return "pdf";
         case ImageFormat::SVG: return "svg";
+        case ImageFormat::AI: return "ai";
+        case ImageFormat::DOC: return "doc";
+        case ImageFormat::DOCX: return "docx";
+        case ImageFormat::XLS: return "xls";
+        case ImageFormat::XLSX: return "xlsx";
+        case ImageFormat::PPT: return "ppt";
+        case ImageFormat::PPTX: return "pptx";
+        case ImageFormat::EPS: return "eps";
+        case ImageFormat::EPDF: return "epdf";
+        case ImageFormat::EPI: return "epi";
+        case ImageFormat::EPSF: return "epsf";
+        case ImageFormat::EPS2: return "eps2";
+        case ImageFormat::EPS3: return "eps3";
+        case ImageFormat::EPSI: return "epsi";
+        case ImageFormat::XPS: return "xps";
         case ImageFormat::EXR: return "exr";
         case ImageFormat::HDR: return "hdr";
         case ImageFormat::BIGTIFF: return "bigtiff";
+        case ImageFormat::CIN: return "cin";
+        case ImageFormat::DPX: return "dpx";
+        case ImageFormat::FITS: return "fits";
+        case ImageFormat::FLIF: return "flif";
+        case ImageFormat::J2K: return "j2k";
+        case ImageFormat::MIFF: return "miff";
+        case ImageFormat::MPC: return "mpc";
+        case ImageFormat::PCD: return "pcd";
+        case ImageFormat::PFM: return "pfm";
+        case ImageFormat::PICT: return "pict";
+        case ImageFormat::PPM: return "ppm";
+        case ImageFormat::PSB: return "psb";
+        case ImageFormat::PSP: return "psp";
+        case ImageFormat::SGI: return "sgi";
+        case ImageFormat::TGA: return "tga";
+        case ImageFormat::VTF: return "vtf";
+        case ImageFormat::BMP2: return "bmp2";
+        case ImageFormat::BMP3: return "bmp3";
+        case ImageFormat::DIB: return "dib";
+        case ImageFormat::PJPEG: return "pjpeg";
+        case ImageFormat::PNG8: return "png8";
+        case ImageFormat::PNG24: return "png24";
+        case ImageFormat::PNG32: return "png32";
+        case ImageFormat::GIF87: return "gif87";
+        case ImageFormat::GRAY: return "gray";
+        case ImageFormat::GRAYA: return "graya";
+        case ImageFormat::CMYK: return "cmyk";
+        case ImageFormat::CMYKA: return "cmyka";
+        case ImageFormat::PCX: return "pcx";
+        case ImageFormat::DCX: return "dcx";
+        case ImageFormat::SUN: return "sun";
+        case ImageFormat::RAS: return "ras";
+        case ImageFormat::RGB565: return "rgb565";
+        case ImageFormat::RGBA: return "rgba";
+        case ImageFormat::RGBA555: return "rgba555";
+        case ImageFormat::RGB: return "rgb";
+        case ImageFormat::PBM: return "pbm";
+        case ImageFormat::PGM: return "pgm";
+        case ImageFormat::XBM: return "xbm";
+        case ImageFormat::XPM: return "xpm";
+        case ImageFormat::XWD: return "xwd";
+        case ImageFormat::WBMP: return "wbmp";
+        case ImageFormat::AVS: return "avs";
+        case ImageFormat::DDS: return "dds";
+        case ImageFormat::DJVU: return "djvu";
+        case ImageFormat::SVGZ: return "svgz";
+        case ImageFormat::WMF: return "wmf";
+        case ImageFormat::EMF: return "emf";
+        case ImageFormat::CUR: return "cur";
+        case ImageFormat::ICO: return "ico";
+        case ImageFormat::AVI: return "avi";
+        case ImageFormat::MPG: return "mpg";
+        case ImageFormat::MPEG: return "mpeg";
+        case ImageFormat::MOV: return "mov";
+        case ImageFormat::MP4: return "mp4";
+        case ImageFormat::M4V: return "m4v";
+        case ImageFormat::WMV: return "wmv";
+        case ImageFormat::FLV: return "flv";
+        case ImageFormat::MKV: return "mkv";
+        case ImageFormat::MNG: return "mng";
+        case ImageFormat::JNG: return "jng";
+        case ImageFormat::MPO: return "mpo";
+        case ImageFormat::AAI: return "aai";
+        case ImageFormat::ART: return "art";
+        case ImageFormat::BLP: return "blp";
+        case ImageFormat::BRF: return "brf";
+        case ImageFormat::CALS: return "cals";
+        case ImageFormat::CAPTION: return "caption";
+        case ImageFormat::CLIP: return "clip";
+        case ImageFormat::DCM: return "dcm";
+        case ImageFormat::DOT: return "dot";
+        case ImageFormat::DPR: return "dpr";
+        case ImageFormat::FONT: return "font";
+        case ImageFormat::FPX: return "fpx";
+        case ImageFormat::FRACTAL: return "fractal";
+        case ImageFormat::G: return "g";
+        case ImageFormat::G3: return "g3";
+        case ImageFormat::G4: return "g4";
+        case ImageFormat::GRADIENT: return "gradient";
+        case ImageFormat::GRBO: return "grbo";
+        case ImageFormat::H: return "h";
+        case ImageFormat::HALD: return "hald";
+        case ImageFormat::HCL: return "hcl";
+        case ImageFormat::HISTOGRAM: return "histogram";
+        case ImageFormat::HRZ: return "hrz";
+        case ImageFormat::HTML: return "html";
+        case ImageFormat::HTM: return "htm";
+        case ImageFormat::ICB: return "icb";
+        case ImageFormat::ICC: return "icc";
+        case ImageFormat::ICER: return "icer";
+        case ImageFormat::INFO: return "info";
+        case ImageFormat::INLINE: return "inline";
+        case ImageFormat::IPL: return "ipl";
+        case ImageFormat::ISOBRL: return "isobrl";
+        case ImageFormat::ISOBRL6: return "isobrl6";
+        case ImageFormat::JBG: return "jbg";
+        case ImageFormat::JPE: return "jpe";
+        case ImageFormat::JPM: return "jpm";
+        case ImageFormat::JPS: return "jps";
+        case ImageFormat::JPX: return "jpx";
+        case ImageFormat::JNX: return "jnx";
+        case ImageFormat::K: return "k";
+        case ImageFormat::KVEC: return "kvec";
+        case ImageFormat::LABEL: return "label";
+        case ImageFormat::LINUX: return "linux";
+        case ImageFormat::MAC: return "mac";
+        case ImageFormat::MAP: return "map";
+        case ImageFormat::MAT: return "mat";
+        case ImageFormat::MATTE: return "matte";
+        case ImageFormat::MONO: return "mono";
+        case ImageFormat::MSL: return "msl";
+        case ImageFormat::MTV: return "mtv";
+        case ImageFormat::MVG: return "mvg";
+        case ImageFormat::NULLIMG: return "null";
+        case ImageFormat::ORA: return "ora";
+        case ImageFormat::OTB: return "otb";
+        case ImageFormat::PAL: return "pal";
+        case ImageFormat::PALM: return "palm";
+        case ImageFormat::PCDS: return "pcds";
+        case ImageFormat::PDB: return "pdb";
+        case ImageFormat::PFA: return "pfa";
+        case ImageFormat::PFB: return "pfb";
+        case ImageFormat::PICON: return "picon";
+        case ImageFormat::PIX: return "pix";
+        case ImageFormat::PLASMA: return "plasma";
+        case ImageFormat::POCKETMOD: return "pocketmod";
+        case ImageFormat::PS: return "ps";
+        case ImageFormat::PS2: return "ps2";
+        case ImageFormat::PS3: return "ps3";
+        case ImageFormat::PTIF: return "ptif";
+        case ImageFormat::PWP: return "pwp";
+        case ImageFormat::RGF: return "rgf";
+        case ImageFormat::RLA: return "rla";
+        case ImageFormat::RLE: return "rle";
+        case ImageFormat::RPM: return "rpm";
+        case ImageFormat::RSLE: return "rsle";
+        case ImageFormat::SFW: return "sfw";
+        case ImageFormat::SHTML: return "shtml";
+        case ImageFormat::STREAM: return "stream";
+        case ImageFormat::TEXT: return "text";
+        case ImageFormat::TILE: return "tile";
+        case ImageFormat::TIM: return "tim";
+        case ImageFormat::TM2: return "tm2";
+        case ImageFormat::TTC: return "ttc";
+        case ImageFormat::TTF: return "ttf";
+        case ImageFormat::TXT: return "txt";
+        case ImageFormat::UBRL: return "ubrl";
+        case ImageFormat::UBRL6: return "ubrl6";
+        case ImageFormat::UIL: return "uil";
+        case ImageFormat::UYVY: return "uyvy";
+        case ImageFormat::VDA: return "vda";
+        case ImageFormat::VIFF: return "viff";
+        case ImageFormat::VIPS: return "vips";
+        case ImageFormat::WDP: return "wdp";
+        case ImageFormat::WING: return "wing";
+        case ImageFormat::WPG: return "wpg";
+        case ImageFormat::X: return "x";
+        case ImageFormat::XC: return "xc";
+        case ImageFormat::XCF: return "xcf";
+        case ImageFormat::XV: return "xv";
+        case ImageFormat::YUV: return "yuv";
+        case ImageFormat::YUVA: return "yuva";
+        case ImageFormat::UNKNOWN: return "unknown";
         default: return "unknown";
     }
 }
@@ -922,6 +1301,13 @@ std::string formatToMimeType(ImageFormat format) {
         case ImageFormat::PEFR: return "image/x-pentax-pef";
         case ImageFormat::SRW: return "image/x-samsung-srw";
         case ImageFormat::RWL: return "image/x-leica-rwl";
+        case ImageFormat::CRW: return "image/x-canon-crw";
+        case ImageFormat::MRW: return "image/x-minolta-mrw";
+        case ImageFormat::NRW: return "image/x-nikon-nrw";
+        case ImageFormat::PEF: return "image/x-pentax-pef";
+        case ImageFormat::ERF: return "image/x-epson-erf";
+        case ImageFormat::MEF: return "image/x-mamiya-mef";
+        case ImageFormat::MOS: return "image/x-leaf-mos";
         case ImageFormat::HEIC: return "image/heic";
         case ImageFormat::HEIF: return "image/heif";
         case ImageFormat::AVIF: return "image/avif";
@@ -930,12 +1316,78 @@ std::string formatToMimeType(ImageFormat format) {
         case ImageFormat::TIFF: return "image/tiff";
         case ImageFormat::WEBP: return "image/webp";
         case ImageFormat::GIF: return "image/gif";
+        case ImageFormat::BMP: return "image/bmp";
+        case ImageFormat::JXL: return "image/jxl";
+        case ImageFormat::JP2: return "image/jp2";
         case ImageFormat::PSD: return "image/vnd.adobe.photoshop";
         case ImageFormat::PDF: return "application/pdf";
         case ImageFormat::SVG: return "image/svg+xml";
+        case ImageFormat::AI: return "application/illustrator";
+        case ImageFormat::DOC: return "application/msword";
+        case ImageFormat::DOCX: return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        case ImageFormat::XLS: return "application/vnd.ms-excel";
+        case ImageFormat::XLSX: return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        case ImageFormat::PPT: return "application/vnd.ms-powerpoint";
+        case ImageFormat::PPTX: return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        case ImageFormat::EPS: return "application/postscript";
+        case ImageFormat::EPDF: return "application/pdf";
+        case ImageFormat::XPS: return "application/xps";
         case ImageFormat::EXR: return "image/x-exr";
         case ImageFormat::HDR: return "image/vnd.radiance";
         case ImageFormat::BIGTIFF: return "image/tiff";
+        case ImageFormat::CIN: return "image/x-cin";
+        case ImageFormat::DPX: return "image/x-dpx";
+        case ImageFormat::FITS: return "image/x-fits";
+        case ImageFormat::FLIF: return "image/x-flif";
+        case ImageFormat::MIFF: return "application/x-magick-image";
+        case ImageFormat::MPC: return "application/x-magick-persistent-cache";
+        case ImageFormat::PCD: return "image/x-photo-cd";
+        case ImageFormat::PFM: return "image/x-portable-floatmap";
+        case ImageFormat::PICT: return "image/x-pict";
+        case ImageFormat::PPM: return "image/x-portable-pixmap";
+        case ImageFormat::SGI: return "image/x-sgi";
+        case ImageFormat::TGA: return "image/x-tga";
+        case ImageFormat::BMP2: return "image/bmp";
+        case ImageFormat::BMP3: return "image/bmp";
+        case ImageFormat::DIB: return "image/bmp";
+        case ImageFormat::GRAY: return "image/x-raw-gray";
+        case ImageFormat::GRAYA: return "image/x-raw-graya";
+        case ImageFormat::CMYK: return "image/x-cmyk";
+        case ImageFormat::CMYKA: return "image/x-cmyka";
+        case ImageFormat::PCX: return "image/x-pcx";
+        case ImageFormat::DCX: return "image/x-dcx";
+        case ImageFormat::SUN: return "image/x-sun-raster";
+        case ImageFormat::RAS: return "image/x-cmu-raster";
+        case ImageFormat::RGB: return "image/x-rgb";
+        case ImageFormat::RGBA: return "image/x-rgba";
+        case ImageFormat::PBM: return "image/x-portable-bitmap";
+        case ImageFormat::PGM: return "image/x-portable-graymap";
+        case ImageFormat::XBM: return "image/x-xbitmap";
+        case ImageFormat::XPM: return "image/x-xpixmap";
+        case ImageFormat::XWD: return "image/x-xwindowdump";
+        case ImageFormat::WBMP: return "image/vnd.wap.wbmp";
+        case ImageFormat::DDS: return "image/x-dds";
+        case ImageFormat::DJVU: return "image/vnd.djvu";
+        case ImageFormat::SVGZ: return "image/svg+xml-compressed";
+        case ImageFormat::WMF: return "application/x-wmf";
+        case ImageFormat::EMF: return "application/x-emf";
+        case ImageFormat::CUR: return "image/x-win-bitmap";
+        case ImageFormat::ICO: return "image/x-icon";
+        case ImageFormat::AVI: return "video/x-msvideo";
+        case ImageFormat::MPG: return "video/mpeg";
+        case ImageFormat::MPEG: return "video/mpeg";
+        case ImageFormat::MOV: return "video/quicktime";
+        case ImageFormat::MP4: return "video/mp4";
+        case ImageFormat::M4V: return "video/x-m4v";
+        case ImageFormat::WMV: return "video/x-ms-wmv";
+        case ImageFormat::FLV: return "video/x-flv";
+        case ImageFormat::MKV: return "video/x-matroska";
+        case ImageFormat::MNG: return "video/x-mng";
+        case ImageFormat::JNG: return "image/x-jng";
+        case ImageFormat::MPO: return "image/x-mpo";
+        case ImageFormat::DCM: return "application/dicom";
+        case ImageFormat::PSB: return "image/vnd.adobe.photoshop";
+        case ImageFormat::PSP: return "image/x-psp";
         default: return "application/octet-stream";
     }
 }
@@ -950,8 +1402,15 @@ const char* formatToExtension(ImageFormat format) {
         case ImageFormat::RW2: return "rw2";
         case ImageFormat::DNG: return "dng";
         case ImageFormat::PEFR: return "pef";
+        case ImageFormat::PEF: return "pef";
         case ImageFormat::SRW: return "srw";
         case ImageFormat::RWL: return "rwl";
+        case ImageFormat::CRW: return "crw";
+        case ImageFormat::MRW: return "mrw";
+        case ImageFormat::NRW: return "nrw";
+        case ImageFormat::ERF: return "erf";
+        case ImageFormat::MEF: return "mef";
+        case ImageFormat::MOS: return "mos";
         case ImageFormat::HEIC: return "heic";
         case ImageFormat::HEIF: return "heif";
         case ImageFormat::AVIF: return "avif";
@@ -960,12 +1419,72 @@ const char* formatToExtension(ImageFormat format) {
         case ImageFormat::TIFF: return "tiff";
         case ImageFormat::WEBP: return "webp";
         case ImageFormat::GIF: return "gif";
+        case ImageFormat::BMP: return "bmp";
+        case ImageFormat::JXL: return "jxl";
+        case ImageFormat::JP2: return "jp2";
         case ImageFormat::PSD: return "psd";
         case ImageFormat::PDF: return "pdf";
         case ImageFormat::SVG: return "svg";
+        case ImageFormat::AI: return "ai";
+        case ImageFormat::DOC: return "doc";
+        case ImageFormat::DOCX: return "docx";
+        case ImageFormat::XLS: return "xls";
+        case ImageFormat::XLSX: return "xlsx";
+        case ImageFormat::PPT: return "ppt";
+        case ImageFormat::PPTX: return "pptx";
+        case ImageFormat::EPS: return "eps";
+        case ImageFormat::EPDF: return "epdf";
+        case ImageFormat::XPS: return "xps";
         case ImageFormat::EXR: return "exr";
         case ImageFormat::HDR: return "hdr";
         case ImageFormat::BIGTIFF: return "tiff";
+        case ImageFormat::CIN: return "cin";
+        case ImageFormat::DPX: return "dpx";
+        case ImageFormat::FITS: return "fits";
+        case ImageFormat::FLIF: return "flif";
+        case ImageFormat::MIFF: return "miff";
+        case ImageFormat::MPC: return "mpc";
+        case ImageFormat::PCD: return "pcd";
+        case ImageFormat::PFM: return "pfm";
+        case ImageFormat::PICT: return "pict";
+        case ImageFormat::PPM: return "ppm";
+        case ImageFormat::SGI: return "sgi";
+        case ImageFormat::TGA: return "tga";
+        case ImageFormat::GRAY: return "gray";
+        case ImageFormat::GRAYA: return "graya";
+        case ImageFormat::CMYK: return "cmyk";
+        case ImageFormat::CMYKA: return "cmyka";
+        case ImageFormat::PCX: return "pcx";
+        case ImageFormat::DCX: return "dcx";
+        case ImageFormat::SUN: return "sun";
+        case ImageFormat::RAS: return "ras";
+        case ImageFormat::RGB: return "rgb";
+        case ImageFormat::RGBA: return "rgba";
+        case ImageFormat::PBM: return "pbm";
+        case ImageFormat::PGM: return "pgm";
+        case ImageFormat::XBM: return "xbm";
+        case ImageFormat::XPM: return "xpm";
+        case ImageFormat::XWD: return "xwd";
+        case ImageFormat::WBMP: return "wbmp";
+        case ImageFormat::DDS: return "dds";
+        case ImageFormat::DJVU: return "djvu";
+        case ImageFormat::SVGZ: return "svgz";
+        case ImageFormat::WMF: return "wmf";
+        case ImageFormat::EMF: return "emf";
+        case ImageFormat::CUR: return "cur";
+        case ImageFormat::ICO: return "ico";
+        case ImageFormat::AVI: return "avi";
+        case ImageFormat::MPG: return "mpg";
+        case ImageFormat::MPEG: return "mpeg";
+        case ImageFormat::MOV: return "mov";
+        case ImageFormat::MP4: return "mp4";
+        case ImageFormat::M4V: return "m4v";
+        case ImageFormat::WMV: return "wmv";
+        case ImageFormat::FLV: return "flv";
+        case ImageFormat::MKV: return "mkv";
+        case ImageFormat::MNG: return "mng";
+        case ImageFormat::JNG: return "jng";
+        case ImageFormat::MPO: return "mpo";
         default: return "bin";
     }
 }

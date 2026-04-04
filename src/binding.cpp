@@ -283,31 +283,56 @@ static Napi::Value GetSupportedFormats(const Napi::CallbackInfo& info) {
     Napi::Array all = Napi::Array::New(env);
     size_t idx = 0;
 
-    // RAW formats
-    std::vector<std::string> rawFormats = {"cr2", "nef", "arw", "orf", "raf", "rw2", "dng", "pef", "srw", "rwl"};
+    // RAW formats (LibRaw)
+    const char* rawFormats[] = {"cr2", "nef", "arw", "orf", "raf", "rw2", "dng", "pef", "srw", "rwl", "crw", "mrw", "nrw", "erf", "3fr", "k25", "kdc", "mef", "mos", "mraw", "rrf", "sr2", "rwz"};
     for (const auto& f : rawFormats) {
         all.Set(idx++, Napi::String::New(env, f));
     }
 
-    // HEIC formats
+    // HEIC/AVIF (LibHeif)
     all.Set(idx++, Napi::String::New(env, "heic"));
     all.Set(idx++, Napi::String::New(env, "heif"));
     all.Set(idx++, Napi::String::New(env, "avif"));
 
-    // ImageMagick-handled formats
-    all.Set(idx++, Napi::String::New(env, "psd"));
-    all.Set(idx++, Napi::String::New(env, "pdf"));
-    all.Set(idx++, Napi::String::New(env, "svg"));
-    all.Set(idx++, Napi::String::New(env, "exr"));
-    all.Set(idx++, Napi::String::New(env, "hdr"));
-    all.Set(idx++, Napi::String::New(env, "bigtiff"));
+    // Standard formats (Sharp)
+    const char* standardFormats[] = {"jpeg", "jpg", "png", "tiff", "tif", "webp", "gif", "bmp", "jxl"};
+    for (const auto& f : standardFormats) {
+        all.Set(idx++, Napi::String::New(env, f));
+    }
 
-    // Standard formats
-    all.Set(idx++, Napi::String::New(env, "jpeg"));
-    all.Set(idx++, Napi::String::New(env, "png"));
-    all.Set(idx++, Napi::String::New(env, "webp"));
-    all.Set(idx++, Napi::String::New(env, "tiff"));
-    all.Set(idx++, Napi::String::New(env, "gif"));
+    // Document formats (ImageMagick)
+    const char* documentFormats[] = {"psd", "pdf", "svg", "ai", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "eps", "xps"};
+    for (const auto& f : documentFormats) {
+        all.Set(idx++, Napi::String::New(env, f));
+    }
+
+    // Scientific/imaging formats (ImageMagick)
+    const char* scientificFormats[] = {"exr", "hdr", "bigtiff", "cin", "dpx", "fits", "flif", "j2k", "jp2", "miff", "mpc", "pcd", "pfm", "pict", "ppm", "psb", "psp", "sgi", "tga", "vtf"};
+    for (const auto& f : scientificFormats) {
+        all.Set(idx++, Napi::String::New(env, f));
+    }
+
+    // Other ImageMagick formats
+    const char* otherFormats[] = {
+        "bmp2", "bmp3", "dib", "dds", "djvu", "svgz", "wmf", "emf", "cur", "ico",
+        "pcx", "dcx", "sun", "ras", "pbm", "pgm", "pnm", "xbm", "xpm", "xwd", "wbmp",
+        "avi", "mpg", "mpeg", "mov", "mp4", "m4v", "wmv", "flv", "mkv", "mng", "jng", "mpo",
+        "gray", "graya", "cmyk", "cmyka", "rgb", "rgba", "rgb565", "rgba555",
+        "aai", "art", "blp", "brf", "cals", "caption", "clip", "dcm", "dot", "dpr",
+        "font", "fpx", "fractal", "g", "g3", "g4", "gradient", "grbo", "h", "hald",
+        "hcl", "histogram", "hrz", "htm", "html", "icb", "icc", "icer", "info",
+        "inline", "ipl", "isobrl", "isobrl6", "jbg", "jnx", "jpe", "jpm", "jps", "jpx",
+        "k", "kvec", "label", "linux", "mac", "map", "mat", "matte", "mono", "msl",
+        "mtv", "mvg", "null", "ora", "otb", "pal", "palm", "pcds", "pdb", "pfa", "pfb",
+        "picon", "pix", "pjpeg", "plasma", "png8", "png24", "png32", "pocketmod",
+        "ps", "ps2", "ps3", "ptif", "pwp", "rgf", "rla", "rle", "rpm", "rsle",
+        "sfw", "shtml", "stream", "text", "tile", "tim", "tm2", "ttc", "ttf", "txt",
+        "ubrl", "ubrl6", "uil", "uyvy", "vda", "viff", "vips", "wdp", "wing", "wpg",
+        "x", "xc", "xcf", "xv", "yuv", "yuva"
+    };
+    for (const auto& f : otherFormats) {
+        all.Set(idx++, Napi::String::New(env, f));
+    }
 
     return all;
 }

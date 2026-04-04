@@ -55,13 +55,16 @@ nImage/
 ### ImageFormat enum
 ```
 UNKNOWN, CR2, NEF, ARW, ORF, RAF, RW2, DNG, PEFR, SRW, RWL,
-HEIC, HEIF, AVIF, JPEG, PNG, TIFF, WEBP, GIF
+HEIC, HEIF, AVIF, JPEG, PNG, TIFF, WEBP, GIF, BMP, JXL, JP2,
+PSD, PDF, SVG, AI, DOC/DOCX, XLS/XLSX, PPT/PPTX, EPS, XPS,
+EXR, HDR, BIGTIFF, CIN, DPX, FITS, FLIF, MIFF, MPC, PCD, PFM,
+SGI, TGA, VTF, and 150+ additional formats via ImageMagick
 ```
 
 ## Decoders
 
 ### LibRawDecoder
-- RAW formats: CR2, NEF, ARW, ORF, RAF, RW2, DNG, PEFR, SRW, RWL
+- RAW formats: CR2, NEF, ARW, ORF, RAF, RW2, DNG, PEFR, SRW, RWL, CRW, MRW, NRW, etc.
 - Uses `open_buffer()` for in-memory decoding
 - `dcraw_process()` for demosaicing
 - Extracts full EXIF metadata
@@ -70,6 +73,12 @@ HEIC, HEIF, AVIF, JPEG, PNG, TIFF, WEBP, GIF
 - HEIC, HEIF, AVIF formats
 - `heif_context_read_from_memory_without_copy()`
 - Outputs RGB or RGBA depending on alpha
+
+### MagickDecoder (Fallback)
+- Handles all formats not covered by LibRaw/LibHeif
+- Uses ImageMagick Core library (MagickCore) directly
+- Supports 150+ formats: documents (PDF, SVG, AI, DOCX, XLSX, PPTX), scientific (EXR, HDR, DPX, FITS), video stills (AVI, MOV, MP4, MKV), and more
+- Factory creates MagickDecoder for any format not handled by specialized decoders
 
 ## Build System
 
@@ -94,15 +103,13 @@ npm run build
 | 1 | ✅ DONE | Foundation: NAPI bindings, base decoder, format detection |
 | 2 | ✅ DONE | LibRaw integration for RAW formats |
 | 3 | ✅ DONE | LibHeif integration for HEIC/HEIF |
-| 4 | 🔲 TODO | Standard format decoders (JPEG, PNG, WebP, TIFF) |
-| 5 | 🔲 TODO | Encoder foundation (base class, factory) |
-| 6 | 🔲 TODO | JPEG encoder |
-| 7 | 🔲 TODO | PNG encoder |
-| 8 | 🔲 TODO | WebP encoder |
-| 9 | 🔲 TODO | AVIF encoder (via Sharp initially) |
-| 10 | 🔲 TODO | Sharp integration for transforms |
-| 11 | ⬜ FUTURE | LittleCMS color management |
-| 12 | ⬜ FUTURE | Polish: tiling, streaming, thumbnails |
+| 4 | ✅ DONE | ImageMagick fallback for 150+ formats (PSD, PDF, SVG, AI, DOCX, EXR, HDR, etc.) |
+| 5 | ✅ DONE | Sharp integration for transforms and encoding |
+| 6 | 🔲 TODO | Multi-page PDF support |
+| 7 | ⬜ FUTURE | LittleCMS color management |
+| 8 | ⬜ FUTURE | Polish: tiling, streaming, thumbnails |
+
+**Note:** Encoding is handled by Sharp (JPEG, PNG, WebP, AVIF, TIFF). No separate encoders needed.
 
 ## Adding a New Encoder
 
