@@ -104,41 +104,126 @@ All encoding is handled by Sharp. No native encoders needed.
 - [x] Standard formats (JPEG, PNG, WebP, TIFF, GIF) pass through Sharp directly
 - [x] No native decoder needed - Sharp handles these natively
 
-### Phase 6: Memory & Performance Optimization 🔲 TODO
-- [ ] Tile-based decoding for large images
-- [ ] Streaming decode for memory efficiency
-- [ ] Thumbnail extraction without full decode
-- [ ] Performance: avoid buffer copies where possible
-
-### Phase 7: Encoder Options (via Sharp) ✅ DONE
+### Phase 6: Encoder Options (via Sharp) ✅ DONE
 - [x] Quality settings for JPEG/WebP/AVIF
 - [x] Compression level for PNG
 - [x] Lossless mode for WebP
 - [x] StripExif option
 
-### Phase 8: AVIF Support (via Sharp) ✅ DONE
+### Phase 7: AVIF Support (via Sharp) ✅ DONE
 - [x] Test Sharp AVIF output
 - [x] Pipeline: any format → Sharp AVIF encode
+
+### Phase 8: Memory & Performance Optimization 🔲 TODO
+
+#### Goals
+- Sub-100ms thumbnail extraction for preview generation
+- Zero-copy path where possible (avoid intermediate buffer allocations)
+- Pipeline-level error propagation and metadata preservation
+
+---
+
+#### Feature 1: Error Propagation & Metadata
+
+**Error Propagation:**
+- Catch Sharp errors during pipeline and surface as nImage errors
+- Preserve error chain: Sharp error → nImage error with context
+
+**Metadata Preservation:**
+- Extract EXIF during decode, re-attach to pipeline output
+- Option to strip/discard via `stripExif: true`
+- ICC profile passthrough when output color space matches
+
+**API:**
+```javascript
+const result = await nImage('photo.cr2')
+  .resize(1024)
+  .jpeg({ quality: 85, preserveExif: true })
+  .toBuffer();
+// result.metadata contains original EXIF if preserveExif: true
+```
+
+---
+
+#### Feature 2: Zero-Copy Pipeline
+
+Minimize buffer copies between decode → transform → encode.
+
+**Implementation:**
+- Reuse `ImageData` buffer in Sharp input when possible
+- Use `sharp.raw()` with `copy === false` to avoid unnecessary allocation
+- Pool memory for repeated operations (batch processing)
+
+**API changes:**
+```javascript
+// Pool for batch processing
+const pool = nImage.createBufferPool({ maxBuffers: 8 });
+const buf = pool.acquire(size);
+pool.release(buf);
+```
+
+---
+
+#### Feature 3: Thumbnail Extraction
+
+Extract embedded thumbnail without full demosaic/color conversion.
+
+**Implementation:**
+- LibRaw: Extract `thumbnail` field directly (pre-demosaic JPEG)
+- LibHeif: Use `heif_image_handle_get_thumbnail`
+- Fall back to reduced-size decode if no embedded thumbnail
+
+**API:**
+```javascript
+const thumb = await nImage.thumbnail(buffer, { size: 256 });
+// Returns ImageData at requested size, < 10ms
+```
+
+---
+
+#### Feature 4: Streaming Decode
+
+Memory-efficient decode that yields tiles/chunks without loading entire image.
+
+**Implementation:**
+- Generator-based API for tile iteration
+- Pool of reusable buffers to avoid allocation churn
+- Backpressure support to prevent overwhelming consumers
+
+**API:**
+```javascript
+for await (const tile of decoder.stream(buffer, { tileSize: 2048 })) {
+  // tile: { data, x, y, width, height }
+  await processTile(tile);
+}
+```
+
+---
+
+#### Feature 5: Benchmarks
+
+Establish baseline metrics for comparison.
+
+**Targets:**
+| Operation | Baseline | Target |
+|-----------|----------|--------|
+| Thumbnail 256px | - | < 10ms |
+| Full decode 100MP | - | < 2000ms |
+| Pipeline (decode→resize→encode) | - | < baseline × 1.2 |
+
+**Compare against:** ImageMagick, libvips CLI, sharp
 
 ### Phase 9: Multi-page PDF Support ⬜ FUTURE
 - [ ] Get page count for multi-page PDFs
 - [ ] Render specific page to image
 - [ ] Document ingest utilities for CMS/RAG pipelines
 
-### Phase 10: Error Handling & Polish ⬜ FUTURE
-- [ ] Error propagation from Sharp through nImage
-- [ ] Metadata preservation (EXIF) through pipeline
-- [ ] Performance benchmarks vs ImageMagick/sharp
+### Phase 10: Large Image Support ⬜ FUTURE
+- [ ] Tile-based decoding for 100MP+ images
+- [ ] Region-of-interest decode (decode only visible portion)
 
-### Phase 11: Build Extensions ⬜ FUTURE
-- [ ] macOS build support
-- [ ] ARM64 Windows build
 
-### Removed/Deprecated
-- **Native JPEG/PNG/WebP encoders**: Sharp handles these
-- **Native TIFF encoder**: Sharp handles this
-- **Native AVIF encoder**: Sharp handles this
-- **Color space handling**: sRGB output by default, no ICC conversion planned
+
 
 ---
 

@@ -105,12 +105,12 @@ npm run build
 | 3 | ✅ DONE | LibHeif integration for HEIC/HEIF |
 | 4 | ✅ DONE | Sharp integration for transforms and encoding |
 | 5 | ✅ DONE | Standard format decoders (Sharp pass-through) |
-| 6 | 🔲 TODO | Memory & Performance: tile-based decoding, streaming, thumbnails |
-| 7 | ✅ DONE | Encoder options (via Sharp) |
-| 8 | ✅ DONE | AVIF support (via Sharp) |
+| 6 | ✅ DONE | Encoder options (via Sharp) |
+| 7 | ✅ DONE | AVIF support (via Sharp) |
+| 8 | 🔲 TODO | Memory & Performance: error propagation, zero-copy, thumbnails, streaming |
 | 9 | ⬜ FUTURE | Multi-page PDF support |
-| 10 | ⬜ FUTURE | Error handling & polish |
-| 11 | ⬜ FUTURE | Build extensions (macOS, ARM64)
+| 10 | ⬜ FUTURE | Large image support: tile-based decoding for 100MP+ images |
+
 
 **Note:** Encoding is handled by Sharp (JPEG, PNG, WebP, AVIF, TIFF). No separate encoders needed.
 
