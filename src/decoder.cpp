@@ -488,6 +488,89 @@ bool LibRawDecoder::getThumbnail(const uint8_t* buffer, size_t size, int maxSize
     return true;
 }
 
+size_t LibRawDecoder::stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) {
+    if (!buffer || size < 64 || tileSize <= 0) {
+        error_ = "Invalid buffer or tileSize";
+        return 0;
+    }
+
+    LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
+
+    int ret = raw->open_buffer((void*)buffer, size);
+    if (ret != 0) {
+        error_ = "Failed to open RAW buffer (error code: " + std::to_string(ret) + ")";
+        return 0;
+    }
+
+    ret = raw->unpack();
+    if (ret != 0) {
+        error_ = "Failed to unpack RAW data (error code: " + std::to_string(ret) + ")";
+        return 0;
+    }
+
+    ret = raw->dcraw_process();
+    if (ret != 0) {
+        error_ = "Failed to process RAW data (error code: " + std::to_string(ret) + ")";
+        return 0;
+    }
+
+    libraw_processed_image_t* img = raw->dcraw_make_mem_image(nullptr);
+    if (!img) {
+        error_ = "Failed to extract processed image from libraw";
+        return 0;
+    }
+
+    int fullWidth = img->width;
+    int fullHeight = img->height;
+    int colors = img->colors;
+    int bits = img->bits;
+
+    if (fullWidth <= 0 || fullHeight <= 0) {
+        LibRaw::dcraw_clear_mem(img);
+        error_ = "Invalid output dimensions from RAW";
+        return 0;
+    }
+
+    int numChannels = colors;
+    int bytesPerChannel = bits / 8;
+    int rowSize = fullWidth * numChannels * bytesPerChannel;
+
+    for (int y = 0; y < fullHeight; y += tileSize) {
+        for (int x = 0; x < fullWidth; x += tileSize) {
+            int tileWidth = std::min(tileSize, fullWidth - x);
+            int tileHeight = std::min(tileSize, fullHeight - y);
+
+            ImageData tile;
+            tile.x = x;
+            tile.y = y;
+            tile.width = tileWidth;
+            tile.height = tileHeight;
+            tile.bitsPerChannel = bits;
+            tile.channels = numChannels;
+            tile.hasAlpha = (numChannels == 4);
+            tile.colorSpace = "sRGB";
+            tile.format = "raw";
+
+            size_t tileDataSize = tileWidth * tileHeight * numChannels * bytesPerChannel;
+            tile.data.resize(tileDataSize);
+
+            for (int ty = 0; ty < tileHeight; ty++) {
+                int srcRow = y + ty;
+                const uint8_t* srcRowPtr = img->data + srcRow * rowSize + x * numChannels * bytesPerChannel;
+                uint8_t* dstPtr = tile.data.data() + ty * tileWidth * numChannels * bytesPerChannel;
+                std::memcpy(dstPtr, srcRowPtr, tileWidth * numChannels * bytesPerChannel);
+            }
+
+            tile.rawWidth = fullWidth;
+            tile.rawHeight = fullHeight;
+            outputTiles.push_back(std::move(tile));
+        }
+    }
+
+    LibRaw::dcraw_clear_mem(img);
+    return outputTiles.size();
+}
+
 // ============================================================================
 // LibHeif Decoder
 // ============================================================================
@@ -777,6 +860,91 @@ bool LibHeifDecoder::getThumbnail(const uint8_t* buffer, size_t size, int maxSiz
     heif_image_handle_release(thumb_handle);
     error_ = "Thumbnail too large";
     return false;
+}
+
+size_t LibHeifDecoder::stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) {
+    if (!openBuffer(buffer, size)) {
+        return 0;
+    }
+
+    heif_image_handle* handle = nullptr;
+    heif_error err = heif_context_get_primary_image_handle(heif_context_, &handle);
+    if (err.code != heif_error_Ok) {
+        error_ = std::string("Failed to get primary image: ") + err.message;
+        return 0;
+    }
+
+    int fullWidth = heif_image_handle_get_width(handle);
+    int fullHeight = heif_image_handle_get_height(handle);
+
+    if (fullWidth <= 0 || fullHeight <= 0) {
+        heif_image_handle_release(handle);
+        error_ = "Invalid image dimensions from HEIF";
+        return 0;
+    }
+
+    bool hasAlpha = heif_image_handle_has_alpha_channel(handle) != 0;
+
+    heif_image* img = nullptr;
+    enum heif_colorspace colorspace = heif_colorspace_RGB;
+    enum heif_chroma chroma = hasAlpha ? heif_chroma_interleaved_RGBA : heif_chroma_interleaved_RGB;
+
+    err = heif_decode_image(handle, &img, colorspace, chroma, nullptr);
+    heif_image_handle_release(handle);
+
+    if (err.code != heif_error_Ok) {
+        error_ = std::string("Failed to decode HEIF: ") + err.message;
+        return 0;
+    }
+
+    int outWidth = heif_image_get_primary_width(img);
+    int outHeight = heif_image_get_primary_height(img);
+    enum heif_chroma outChroma = heif_image_get_chroma_format(img);
+    int numChannels = (outChroma == heif_chroma_interleaved_RGBA ||
+                       outChroma == heif_chroma_interleaved_RRGGBBAA_LE ||
+                       outChroma == heif_chroma_interleaved_RRGGBBAA_BE) ? 4 : 3;
+
+    int stride = 0;
+    const uint8_t* pixelData = heif_image_get_plane_readonly(img, heif_channel_interleaved, &stride);
+
+    if (!pixelData) {
+        heif_image_release(img);
+        error_ = "Failed to get pixel data from HEIF image";
+        return 0;
+    }
+
+    for (int y = 0; y < outHeight; y += tileSize) {
+        for (int x = 0; x < outWidth; x += tileSize) {
+            int tileWidth = std::min(tileSize, outWidth - x);
+            int tileHeight = std::min(tileSize, outHeight - y);
+
+            ImageData tile;
+            tile.x = x;
+            tile.y = y;
+            tile.width = tileWidth;
+            tile.height = tileHeight;
+            tile.bitsPerChannel = 8;
+            tile.channels = numChannels;
+            tile.hasAlpha = hasAlpha;
+            tile.colorSpace = "sRGB";
+            tile.format = "heic";
+
+            size_t tileDataSize = tileWidth * tileHeight * numChannels;
+            tile.data.resize(tileDataSize);
+
+            for (int ty = 0; ty < tileHeight; ty++) {
+                int srcRow = y + ty;
+                const uint8_t* srcRowPtr = pixelData + srcRow * stride + x * numChannels;
+                uint8_t* dstPtr = tile.data.data() + ty * tileWidth * numChannels;
+                std::memcpy(dstPtr, srcRowPtr, tileWidth * numChannels);
+            }
+
+            outputTiles.push_back(std::move(tile));
+        }
+    }
+
+    heif_image_release(img);
+    return outputTiles.size();
 }
 
 bool LibHeifDecoder::supportsFormat(ImageFormat format) const {
@@ -1086,6 +1254,99 @@ bool MagickDecoder::getThumbnail(const uint8_t* buffer, size_t size, int maxSize
     (void)SyncAuthenticPixels(image, exception);
     DestroyImage(image);
     return true;
+}
+
+size_t MagickDecoder::stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) {
+    if (!buffer || size < 12) {
+        error_ = "Buffer too small or null";
+        return 0;
+    }
+
+    ImageInfo* info = static_cast<ImageInfo*>(imageInfo_);
+    ExceptionInfo* exception = static_cast<ExceptionInfo*>(exceptionInfo_);
+
+    GetImageInfo(info);
+    info->blob = (void*)buffer;
+    info->length = size;
+
+    Image* image = ReadImage(info, exception);
+    if (!image || exception->severity != UndefinedException) {
+        if (image) DestroyImage(image);
+        error_ = "Failed to read image for streaming";
+        return 0;
+    }
+
+    int fullWidth = static_cast<int>(image->columns);
+    int fullHeight = static_cast<int>(image->rows);
+
+    if (fullWidth <= 0 || fullHeight <= 0) {
+        DestroyImage(image);
+        error_ = "Invalid image dimensions";
+        return 0;
+    }
+
+    if (image->alpha_trait != UndefinedPixelTrait) {
+        (void)SetImageAlpha(image, OpaqueAlpha, exception);
+    }
+    if (SetImageType(image, TrueColorType, exception) == MagickFalse) {
+        DestroyImage(image);
+        error_ = "Failed to convert image to RGB";
+        return 0;
+    }
+
+    int channels = (image->alpha_trait != UndefinedPixelTrait) ? 4 : 3;
+
+    for (int y = 0; y < fullHeight; y += tileSize) {
+        for (int x = 0; x < fullWidth; x += tileSize) {
+            int tileWidth = std::min(tileSize, fullWidth - x);
+            int tileHeight = std::min(tileSize, fullHeight - y);
+
+            ImageData tile;
+            tile.x = x;
+            tile.y = y;
+            tile.width = tileWidth;
+            tile.height = tileHeight;
+            tile.bitsPerChannel = 8;
+            tile.channels = channels;
+            tile.hasAlpha = (channels == 4);
+            tile.colorSpace = "sRGB";
+            tile.format = image->magick;
+            tile.orientation = static_cast<int>(image->orientation);
+
+            if (tile.orientation < 1 || tile.orientation > 8) {
+                tile.orientation = 1;
+            }
+
+            size_t tileDataSize = (size_t)tileWidth * tileHeight * channels;
+            tile.data.resize(tileDataSize);
+
+            char* pixelData = reinterpret_cast<char*>(tile.data.data());
+            for (int ty = 0; ty < tileHeight; ty++) {
+                Quantum* pixels = GetAuthenticPixels(image, x, y + ty, tileWidth, 1, exception);
+                if (!pixels) {
+                    DestroyImage(image);
+                    error_ = "Failed to read pixel row";
+                    return 0;
+                }
+                for (int tx = 0; tx < tileWidth; tx++) {
+                    size_t idx = (ty * tileWidth + tx) * channels;
+                    pixelData[idx + 0] = static_cast<char>(GetPixelRed(image, pixels));
+                    pixelData[idx + 1] = static_cast<char>(GetPixelGreen(image, pixels));
+                    pixelData[idx + 2] = static_cast<char>(GetPixelBlue(image, pixels));
+                    if (channels == 4) {
+                        pixelData[idx + 3] = static_cast<char>(GetPixelAlpha(image, pixels));
+                    }
+                    pixels += channels;
+                }
+            }
+
+            (void)SyncAuthenticPixels(image, exception);
+            outputTiles.push_back(std::move(tile));
+        }
+    }
+
+    DestroyImage(image);
+    return outputTiles.size();
 }
 
 bool MagickDecoder::extractMetadataOnly(ImageMetadata& metadata) {

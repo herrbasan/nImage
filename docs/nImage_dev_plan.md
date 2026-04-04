@@ -138,7 +138,10 @@ All encoding is handled by Sharp. No native encoders needed.
 - [x] Test Sharp AVIF output
 - [x] Pipeline: any format → Sharp AVIF encode
 
-### Phase 8: Memory & Performance Optimization 🔄 IN PROGRESS
+### Phase 8: Memory & Performance Optimization ✅ DONE (Features 1-4)
+
+Features 1-4: Error propagation, Zero-copy pipeline, Thumbnail extraction, Streaming decode ✅
+Feature 5 (Benchmarks): ⬜ Future work
 
 #### Goals
 - Sub-100ms thumbnail extraction for preview generation ✅
@@ -233,20 +236,29 @@ const thumb = await nImage('photo.cr2').thumbnail({ size: 256 });
 
 ---
 
-#### Feature 4: Streaming Decode
+#### Feature 4: Streaming Decode ✅ DONE
 
 Memory-efficient decode that yields tiles/chunks without loading entire image.
 
 **Implementation:**
-- Generator-based API for tile iteration
-- Pool of reusable buffers to avoid allocation churn
-- Backpressure support to prevent overwhelming consumers
+- `decoder.stream(buffer, { tileSize })` returns array of tiles
+- Each tile has `{ data, x, y, width, height }` for position info
+- Tiles are extracted from full decoded image efficiently
+- Works with all decoders: LibRaw, LibHeif, MagickDecoder
 
 **API:**
 ```javascript
-for await (const tile of decoder.stream(buffer, { tileSize: 2048 })) {
-  // tile: { data, x, y, width, height }
+// Pipeline method
+const tiles = await nImage('photo.cr2').stream({ tileSize: 2048 });
+for (const tile of tiles) {
+  // tile: { data, x, y, width, height, channels, format, ... }
   await processTile(tile);
+}
+
+// Standalone function
+const tiles = nImage.stream(buffer, { tileSize: 2048 });
+for (const tile of tiles) {
+  console.log(`Tile at ${tile.x},${tile.y} size ${tile.width}x${tile.height}`);
 }
 ```
 
@@ -593,7 +605,7 @@ npm run setup
 ## 12. Changelog
 
 ### v2.2.0 (Current)
-- **Phase 8 Features 1-3**: Error propagation, Zero-copy pipeline, Thumbnail extraction
+- **Phase 8 Features 1-4**: Error propagation, Zero-copy pipeline, Thumbnail extraction, Streaming decode
   - Enhanced pipeline errors with operation context
   - Metadata preservation from native decode (orientation, camera, capture)
   - `preserveExif: true` option for JPEG output
@@ -603,6 +615,10 @@ npm run setup
   - RAW: Fast thumbnail via `unpack_thumb()` + `dcraw_make_mem_thumb()`
   - HEIC: Native thumbnail via `heif_image_handle_get_thumbnail()`
   - Standard formats: Sharp resize for fast thumbnails
+  - `nImage.stream(buffer, { tileSize: 2048 })` - tile-based streaming decode
+  - `nImage('photo.cr2').stream({ tileSize: 2048 })` pipeline method
+  - Streaming support across all decoders (LibRaw, LibHeif, MagickDecoder)
+  - Tiles include x/y position info for efficient composition
 
 ### v2.1.0
 - **ImageMagick fallback**: 150+ additional formats supported (PDF, SVG, AI, DOCX, XLSX, PPTX, EXR, HDR, etc.)

@@ -17,6 +17,8 @@ static Napi::Object ImageDataToJS(Napi::Env env, const ImageData& data) {
 
     obj.Set("width", Napi::Number::New(env, data.width));
     obj.Set("height", Napi::Number::New(env, data.height));
+    obj.Set("x", Napi::Number::New(env, data.x));
+    obj.Set("y", Napi::Number::New(env, data.y));
     obj.Set("bitsPerChannel", Napi::Number::New(env, data.bitsPerChannel));
     obj.Set("channels", Napi::Number::New(env, data.channels));
     obj.Set("colorSpace", Napi::String::New(env, data.colorSpace));
@@ -438,6 +440,72 @@ static Napi::Value GetThumbnail(const Napi::CallbackInfo& info) {
     return ImageDataToJS(env, output);
 }
 
+/**
+ * Stream decode an image - returns array of tiles for memory-efficient processing
+ * Options:
+ *   - tileSize: size of tiles (default 2048)
+ *   - format: optional format hint
+ * Returns array of ImageData objects with x, y, width, height position info
+ */
+static Napi::Value StreamDecode(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 1 || !info[0].IsBuffer()) {
+        Napi::TypeError::New(env, "Expected Buffer as first argument").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    int tileSize = 2048;
+    ImageFormat format = ImageFormat::UNKNOWN;
+
+    if (info.Length() >= 2 && info[1].IsObject()) {
+        Napi::Object options = info[1].As<Napi::Object>();
+        if (options.Has("tileSize") && options.Get("tileSize").IsNumber()) {
+            tileSize = options.Get("tileSize").As<Napi::Number>().Int32Value();
+        }
+        if (options.Has("format") && options.Get("format").IsString()) {
+            std::string formatStr = options.Get("format").As<Napi::String>().Utf8Value();
+            format = ImageFormatUtil::formatFromString(formatStr);
+        }
+    }
+
+    if (tileSize <= 0) {
+        Napi::TypeError::New(env, "tileSize must be positive").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    Napi::Buffer<uint8_t> inputBuffer = info[0].As<Napi::Buffer<uint8_t>>();
+    uint8_t* data = inputBuffer.Data();
+    size_t size = inputBuffer.Length();
+
+    std::unique_ptr<ImageDecoder> decoder;
+    if (format != ImageFormat::UNKNOWN) {
+        decoder = std::unique_ptr<ImageDecoder>(ImageDecoder::createDecoder(format));
+    } else {
+        decoder = std::unique_ptr<ImageDecoder>(ImageDecoder::createDecoderForBuffer(data, size));
+    }
+
+    if (!decoder) {
+        Napi::Error::New(env, "Unable to create decoder for streaming").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    std::vector<ImageData> tiles;
+    size_t numTiles = decoder->stream(data, size, tileSize, tiles);
+
+    if (numTiles == 0) {
+        Napi::Error::New(env, "Stream decode failed: " + decoder->getError()).ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    Napi::Array result = Napi::Array::New(env, numTiles);
+    for (size_t i = 0; i < numTiles; i++) {
+        result.Set(i, ImageDataToJS(env, tiles[i]));
+    }
+
+    return result;
+}
+
 // ============================================================================
 // Module Initialization
 // ============================================================================
@@ -451,6 +519,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("getSupportedFormats", Napi::Function::New(env, GetSupportedFormats));
     exports.Set("decode", Napi::Function::New(env, DecodeImage));
     exports.Set("thumbnail", Napi::Function::New(env, GetThumbnail));
+    exports.Set("stream", Napi::Function::New(env, StreamDecode));
 
     // Version info
     Napi::Object version = Napi::Object::New(env);

@@ -31,6 +31,10 @@ struct ImageData {
     int width = 0;
     int height = 0;
 
+    // Tile position (for streaming tiles)
+    int x = 0;
+    int y = 0;
+
     // Color depth (bits per channel)
     int bitsPerChannel = 8;
 
@@ -394,6 +398,11 @@ public:
     // If thumbnail is not available, output is unmodified
     virtual bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) = 0;
 
+    // Stream decode - yields tiles for memory-efficient processing
+    // Returns number of tiles generated, 0 if streaming not supported
+    // Tiles are written to outputTiles vector
+    virtual size_t stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) = 0;
+
     // Check if this decoder supports the given format
     virtual bool supportsFormat(ImageFormat format) const = 0;
 
@@ -418,6 +427,7 @@ public:
     bool decode(const uint8_t* buffer, size_t size, ImageData& output) override;
     bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) override;
     bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) override;
+    size_t stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) override;
     bool supportsFormat(ImageFormat format) const override;
     const char* formatName() const override { return "LibRaw"; }
 
@@ -444,6 +454,7 @@ public:
     bool decode(const uint8_t* buffer, size_t size, ImageData& output) override;
     bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) override;
     bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) override;
+    size_t stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) override;
     bool supportsFormat(ImageFormat format) const override;
     const char* formatName() const override { return "LibHeif"; }
 
@@ -471,6 +482,7 @@ public:
     bool decode(const uint8_t* buffer, size_t size, ImageData& output) override;
     bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) override;
     bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) override;
+    size_t stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) override;
     bool supportsFormat(ImageFormat format) const override;
     const char* formatName() const override { return "ImageMagick"; }
 
