@@ -1,7 +1,7 @@
 # nImage - Development Plan
 
-**Last Updated**: 2026-04-03
-**Version**: 2.0.0 (Sharp integration complete)
+**Last Updated**: 2026-04-04
+**Version**: 2.1.0 (ImageMagick fallback complete)
 
 ---
 
@@ -107,7 +107,6 @@ All encoding is handled by Sharp. No native encoders needed.
 ### Phase 6: Pipeline Polish 🔲 TODO
 - [ ] Error propagation from Sharp through nImage
 - [ ] Metadata preservation (EXIF) through pipeline
-- [ ] Color space handling (sRGB output by default)
 - [ ] Performance: avoid buffer copies where possible
 
 ### Phase 7: Encoder Options (via Sharp) ✅ DONE
@@ -120,37 +119,26 @@ All encoding is handled by Sharp. No native encoders needed.
 - [x] Test Sharp AVIF output
 - [x] Pipeline: any format → Sharp AVIF encode
 
-### Phase 9: Color Management ⬜ FUTURE
-- [ ] ICC profile handling via LittleCMS
-- [ ] Color space conversion (if needed beyond sRGB)
-- [ ] Profile embedding in output
+### Phase 9: Multi-page PDF Support ⬜ FUTURE
+- [ ] Get page count for multi-page PDFs
+- [ ] Render specific page to image
+- [ ] Document ingest utilities for CMS/RAG pipelines
 
 ### Phase 10: Polish ⬜ FUTURE
-- [ ] Tile-based decoding for large images (if needed)
+- [ ] Tile-based decoding for large images
 - [ ] Streaming decode for memory efficiency
 - [ ] Thumbnail extraction without full decode
 - [ ] Performance benchmarks vs ImageMagick/sharp
+
+### Phase 11: Build Extensions ⬜ FUTURE
 - [ ] macOS build support
 - [ ] ARM64 Windows build
 
 ### Removed/Deprecated
 - **Native JPEG/PNG/WebP encoders**: Sharp handles these
 - **Native TIFF encoder**: Sharp handles this
-- **Native AVIF encoder**: Sharp handles this (unless performance is unacceptable)
-
-### Phase 11: Color Management ⬜ FUTURE
-- [ ] Integrate LittleCMS for ICC profile handling
-- [ ] Apply ICC profiles to decoded images
-- [ ] Support color space conversion
-- [ ] Profile embedding in output
-
-### Phase 12: Polish ⬜ FUTURE
-- [ ] Tile-based decoding for large images
-- [ ] Streaming decode for memory efficiency
-- [ ] Thumbnail extraction without full decode
-- [ ] Performance benchmarks vs ImageMagick/sharp
-- [ ] macOS build support
-- [ ] ARM64 Windows build
+- **Native AVIF encoder**: Sharp handles this
+- **Color space handling**: sRGB output by default, no ICC conversion planned
 
 ---
 
@@ -461,7 +449,12 @@ npm run setup
 
 ## 11. Changelog
 
-### v2.0.0 (Planned)
+### v2.1.0 (Current)
+- **ImageMagick fallback**: 150+ additional formats supported (PDF, SVG, AI, DOCX, XLSX, PPTX, EXR, HDR, etc.)
+- **MagickDecoder**: Catch-all fallback for any format not handled by LibRaw/LibHeif
+- **212 formats total**: RAW (22), HEIC (3), Standard (9), Documents (13), Scientific (20), Video Stills (12), Other (150+)
+
+### v2.0.0
 - **Sharp-compatible API**: nImage now presents Sharp's API, adding RAW/HEIC support transparently
 - **Pipeline architecture**: RAW/HEIC decode → Sharp transforms → Sharp encode
 - **Removed native encoders**: Sharp handles all encoding (JPEG, PNG, WebP, AVIF)
