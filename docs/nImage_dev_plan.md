@@ -24,7 +24,31 @@
 
 ---
 
-## 2. Technology Stack
+## 2. Development Philosophy
+
+**Core Maxims**
+
+- **Reliability > Performance > Everything else.**
+- **LLM-Native Codebase:** No human readability goals. Optimize for what an LLM can most efficiently understand and modify.
+- **Vanilla JS everywhere.** No TypeScript. `.d.ts` files are generated for context only, never used at runtime.
+- **Zero Dependencies.** If we can build it ourselves using raw standard libraries, we build it. Avoid external third-party packages. Evaluate per-case if a dependency is truly necessary.
+- **Fail Fast, Always.** No defensive coding. No mock data, no fallback defaults, no silencing `try/catch`. Let it crash and fix the root cause.
+
+**Design Principles**
+
+- **Design Failures Away:** Prevention over handling. Every eliminated failure condition is a state that can never occur.
+- **No Defensive Programming:** Silent fallbacks, swallowed exceptions, and default values hide bugs — they make failures invisible and let bad state propagate.
+- **Disposal is Mandatory and Verifiable.** Every resource created must have a proven, confirmed disposal path.
+- **Block Until Truth.** State is authoritative. Race conditions are structurally impossible.
+- **Prefer Self-Explanatory Code.** Comment only what code cannot express: regulatory requirements, historical context, non-obvious consequences.
+- **Single Responsibility.** If you need "and" or "or" to describe a function, it has multiple responsibilities.
+- **Functional Purity.** Isolate impurity (I/O, state, randomness) at boundaries. Keep the core pure for local reasoning.
+- **Measure Before Optimizing.** Intuition about performance is frequently wrong. Profile first.
+- **Abstraction From Evidence.** First use case: write direct. Second: copy-modify. Third: abstract.
+
+---
+
+## 3. Technology Stack
 
 ### Core
 - **Node.js 18+**: NAPI bindings, JavaScript API layer
@@ -59,7 +83,7 @@ All encoding is handled by Sharp. No native encoders needed.
 
 ---
 
-## 3. Development Phases
+## 4. Development Phases
 
 ### Phase 1: Foundation ✅ DONE
 - [x] Module structure and package.json
@@ -227,7 +251,7 @@ Establish baseline metrics for comparison.
 
 ---
 
-## 4. Build System
+## 5. Build System
 
 ### Windows Build (MSYS2 + Direct g++)
 
@@ -267,7 +291,7 @@ pacman -S mingw-w64-x86_64-libraw \
 
 ---
 
-## 5. API Specification
+## 6. API Specification
 
 nImage presents a **Sharp-compatible API**. This means users can use nImage exactly as they would use Sharp, but with added support for RAW and HEIC formats.
 
@@ -347,7 +371,7 @@ encoder.getError() → string
 
 ---
 
-## 6. Return Types
+## 7. Return Types
 
 ### ImageData (Decode Output)
 
@@ -402,7 +426,7 @@ interface ImageMetadata {
 
 ---
 
-## 7. Testing Strategy
+## 8. Testing Strategy
 
 ### Unit Tests
 - [x] Format detection (magic byte signatures)
@@ -441,7 +465,7 @@ interface ImageMetadata {
 
 ---
 
-## 8. Error Handling
+## 9. Error Handling
 
 | Error | Cause | Recovery |
 |-------|-------|----------|
@@ -453,7 +477,7 @@ interface ImageMetadata {
 
 ---
 
-## 9. Implementation Notes
+## 10. Implementation Notes
 
 ### Architecture: Sharp as the Main Engine
 
@@ -519,7 +543,7 @@ const transformed = await sharp(Buffer.from(imageData.data), sharpInput)
 
 ---
 
-## 10. Repository
+## 11. Repository
 
 **URL**: https://github.com/herrbasan/nImage
 
@@ -532,7 +556,7 @@ npm run setup
 
 ---
 
-## 11. Changelog
+## 12. Changelog
 
 ### v2.1.0 (Current)
 - **ImageMagick fallback**: 150+ additional formats supported (PDF, SVG, AI, DOCX, XLSX, PPTX, EXR, HDR, etc.)
