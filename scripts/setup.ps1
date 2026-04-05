@@ -5,30 +5,36 @@
 .DESCRIPTION
     This script sets up nImage's native dependencies and builds the native module.
 
-    It handles:
-    - MSYS2 installation (if not present)
-    - Package installation via pacman
-    - Direct binary download fallback (if pacman fails)
-    - Copying dependencies to deps/
-    - Building the native module
+    It handles two build modes:
+    - MSVC (default, recommended for Electron): Uses vcpkg for dependencies
+    - MinGW (fallback): Uses MSYS2 for dependencies
 
     Run as Administrator in PowerShell:
         .\scripts\setup.ps1
 
 .PARAMETER SkipInstall
-    Skip MSYS2/package installation (assumes deps already present)
+    Skip dependency installation (assumes deps already present)
 
 .PARAMETER SkipBuild
     Only install dependencies, don't build
 
+.PARAMETER UseMinGW
+    Force MinGW build instead of MSVC/vcpkg
+
+.PARAMETER VcpkgRoot
+    Custom path to vcpkg installation (default: C:\vcpkg)
+
 .EXAMPLE
-    .\scripts\setup.ps1          # Full setup and build
+    .\scripts\setup.ps1          # Full setup with MSVC/vcpkg
     .\scripts\setup.ps1 -SkipBuild  # Only install deps
+    .\scripts\setup.ps1 -UseMinGW  # Use MinGW instead
 #>
 
 param(
     [switch]$SkipInstall,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$UseMinGW,
+    [string]$VcpkgRoot = "C:\vcpkg"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -447,7 +453,6 @@ function Main {
     Write-Host "===================" -ForegroundColor Magenta
     Write-Host ""
     Write-Host "Module: $ModuleRoot"
-    Write-Host "MSYS2:  $MSYS2_ROOT"
     Write-Host ""
 
     # Check prerequisites
@@ -457,61 +462,59 @@ function Main {
 
     $nodeVersion = (node --version)
     Write-Host "Node.js: $nodeVersion"
+    Write-Host ""
 
+    # Check for vcpkg (MSVC builds)
+    if (-not $UseMinGW) {
+        $vcpkgLibPath = Join-Path $VcpkgRoot "installed\x64-windows\lib\raw_r.lib"
+        if (Test-Path $vcpkgLibPath) {
+            Write-Success "vcpkg found at $VcpkgRoot (MSVC mode)"
+            Write-Host "Using MSVC build with vcpkg dependencies"
+            Write-Host ""
+
+            if (-not $SkipBuild) {
+                Build-NativeModule
+                Run-Tests
+            }
+
+            Write-Host ""
+            Write-Host "Setup complete!" -ForegroundColor Green
+            return
+        } else {
+            Write-Warn "vcpkg not found or libraw not installed"
+            Write-Host "Falling back to MinGW build..."
+            Write-Host ""
+        }
+    }
+
+    # MinGW fallback
     if (-not $SkipInstall) {
-        # MSYS2 installation
         if (-not (Test-Path $MSYS2_ROOT)) {
             Install-MSYS2
         } else {
             Write-Success "MSYS2 found at $MSYS2_ROOT"
         }
 
-        # Check if deps already exist in deps/
         $depsLibExists = Test-Path (Join-Path $DepLib "libraw.a")
         $depsBinExists = Test-Path (Join-Path $DepBin "libraw-24.dll")
 
         if ($depsLibExists -and $depsBinExists) {
             Write-Success "Dependencies already present in deps/"
         } else {
-            # Package installation
             Install-Packages
-
-            # Copy dependencies
             Copy-Dependencies
         }
     } else {
         Write-Warn "Skipping MSYS2/package installation"
     }
 
-    # Build
     if (-not $SkipBuild) {
         Build-NativeModule
-
-        # Run tests
         Run-Tests
-    } else {
-        Write-Warn "Skipping build"
     }
 
     Write-Host ""
     Write-Host "Setup complete!" -ForegroundColor Green
-    Write-Host ""
-
-    # Verify deps exist
-    $depsCheck = @(
-        @{Path=(Join-Path $DepLib "libraw.a"); Name="libraw"},
-        @{Path=(Join-Path $DepLib "libheif.dll.a"); Name="libheif"},
-        @{Path=(Join-Path $DepBin "libraw-24.dll"); Name="libraw DLL"}
-    )
-
-    Write-Host "Dependency verification:"
-    foreach ($check in $depsCheck) {
-        if (Test-Path $check.Path) {
-            Write-Success "$($check.Name) present"
-        } else {
-            Write-Fail "$($check.Name) missing at $($check.Path)"
-        }
-    }
 }
 
 Main

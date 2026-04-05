@@ -10,8 +10,11 @@
   "scripts": {
     "setup": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
     "setup:deps": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1 -SkipBuild",
-    "build": "node scripts/build.js",
-    "build:debug": "node scripts/build.js --debug",
+    "build": "node-gyp rebuild",
+    "build:debug": "node-gyp rebuild --debug",
+    "build:clean": "node-gyp clean",
+    "rebuild": "node-gyp rebuild",
+    "rebuild:electron": "npx @electron/rebuild -f -w nimage",
     "test": "node test/index.test.js",
     "package": "node scripts/package-binary.js",
     "prepublishOnly": "npm run build && npm run package"
@@ -52,9 +55,9 @@
   "dependencies": {
     "jpeg-js": "^0.4.4",
     "node-addon-api": "^8.0.0",
-    "sharp": "^0.33.0"
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
-    "node-gyp": "^10.0.0"
+    "node-gyp": "^12.2.0"
   }
 }
