@@ -303,12 +303,14 @@ function initNImage(appBasePath) {
     if (!window.electron_helper) return false;
     
     try {
-        const nImageBinPath = path.resolve(appBasePath, 'nImage/build/Release');
+        // CRITICAL: Use './nImage' not '../nImage' to avoid loading from parent directory
+        const nImageBinPath = path.resolve(appBasePath || __dirname, './nImage/build/Release');
         
         // Add DLL folder to PATH before loading
         process.env.PATH = nImageBinPath + ';' + (process.env.PATH || '');
         
-        nImage = require('../nImage/lib/index.js');
+        // CRITICAL: Use './nImage' to ensure we load from THIS project, not a parent folder
+        nImage = require('./nImage/lib/index.js');
         return nImage?.isLoaded || false;
     } catch (e) {
         console.log('nImage unavailable:', e.message);
@@ -319,6 +321,119 @@ function initNImage(appBasePath) {
 // Call during app startup
 const nImageReady = initNImage(g.basePath);
 ```
+
+**⚠️ CRITICAL: Path Resolution Trap**
+
+Using `../nImage` in an Electron app can cause it to load from a parent directory instead of the project folder:
+
+```
+Work_GIT/
+├── nImage/                 ← OLD binary (wrong!)
+├── BlankTest/              ← Your project
+│   ├── js/stage.js
+│   └── nImage/             ← Correct binary (ignored!)
+```
+
+If `stage.js` uses `path.resolve(__dirname, '../nImage')` when `__dirname` is `Work_GIT/BlankTest`, it resolves to `Work_GIT/nImage` instead of `Work_GIT/BlankTest/nImage`.
+
+**Always use `./nImage`** to ensure the module loads from the current project directory.
+
+### Reliable Binary Management with bin/ Directory
+
+For Electron apps, use a project-level `bin/` directory as a reliable binary source:
+
+**Project structure:**
+```
+BlankTest/
+├── bin/                    # Reliable binary location (commit to git)
+│   ├── nimage.node
+│   └── *.dll              # Required runtime DLLs
+├── nImage/                 # Submodule (builds to build/Release/)
+├── scripts/
+│   └── copy-native-bin.js # Copy script
+└── forge.config.js
+```
+
+**1. Update `lib/index.js` loading order:**
+```javascript
+// lib/index.js - Try project bin first
+const path = require('path');
+
+try {
+    // 1. Try project-level bin (reliable for Electron)
+    // nImage/lib -> nImage/ -> project-root/bin/
+    const projectBinPath = path.join(__dirname, '..', '..', 'bin', 'nimage.node');
+    nativeBinding = require(projectBinPath);
+} catch (e) {
+    // 2. Try build directory (development)
+    const buildPath = path.join(__dirname, '..', 'build', 'Release', 'nimage.node');
+    nativeBinding = require(buildPath);
+    // ... fallbacks
+}
+```
+
+**2. Copy script (`scripts/copy-native-bin.js`):**
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+const sourcePaths = [
+    path.join(__dirname, '..', 'nImage', 'build', 'Release', 'nimage.node'),
+    path.join(__dirname, '..', 'nImage', 'dist', 'nimage.node'),
+];
+const targetDir = path.join(__dirname, '..', 'bin');
+const targetPath = path.join(targetDir, 'nimage.node');
+
+// Copy binary
+for (const sourcePath of sourcePaths) {
+    if (fs.existsSync(sourcePath)) {
+        fs.copyFileSync(sourcePath, targetPath);
+        console.log(`Copied: ${sourcePath}`);
+        break;
+    }
+}
+
+// Copy DLLs on Windows
+if (process.platform === 'win32') {
+    const dllSourceDir = path.join(__dirname, '..', 'nImage', 'build', 'Release');
+    const dllNames = ['heif.dll', 'raw_r.dll', /* ... */];
+    for (const dll of dllNames) {
+        const src = path.join(dllSourceDir, dll);
+        const dst = path.join(targetDir, dll);
+        if (fs.existsSync(src)) fs.copyFileSync(src, dst);
+    }
+}
+```
+
+**3. Add npm scripts:**
+```json
+{
+  "scripts": {
+    "build:native": "cd nImage && npm run build",
+    "copy:native": "node scripts/copy-native-bin.js",
+    "rebuild:native": "npm run build:native && npm run copy:native"
+  }
+}
+```
+
+**4. Update `forge.config.js`:**
+```javascript
+module.exports = {
+  packagerConfig: {
+    extraResource: [
+      "config.json",
+      "./bin/"              // Include binaries in package
+    ],
+  }
+};
+```
+
+**Binary loading priority (after setup):**
+1. `../../bin/nimage.node` ← **Reliable, version-controlled**
+2. `../build/Release/nimage.node` ← Development builds
+3. `../dist/nimage.node` ← Distribution fallback
+
+This ensures Electron always loads the correct binary regardless of forge's rebuild behavior.
 
 ### Graceful Degradation
 
