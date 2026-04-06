@@ -211,3 +211,88 @@ Missing samples: NEF, ARW, RAF, AVIF
 - Return Buffers with `Napi::Buffer<uint8_t>::Copy()`
 - All `std::string` fields must be converted to `Napi::String`
 - Error handling: `Napi::Error::New(env, msg).ThrowAsJavaScriptException()`
+
+---
+
+## Electron Integration
+
+### The MinGW Problem
+
+**CRITICAL**: The precompiled binaries in `dist/` are compiled with MinGW and **WILL CRASH** in Electron on Windows. This is due to an Import Address Table (IAT) bug where MinGW-compiled NAPI addons have empty import tables for `napi_*` functions, causing 0xC0000005 Access Violation when the module loads.
+
+**Solution**: Build with MSVC using `binding.gyp` + node-gyp.
+
+### Required DLLs (Windows)
+
+The following runtime DLLs must be available for nImage to load:
+
+| DLL | Source | Purpose |
+|-----|--------|---------|
+| `heif.dll` | vcpkg | HEIC/HEIF decoding |
+| `raw_r.dll` | vcpkg | LibRaw (RAW formats) |
+| `raw.dll` | vcpkg | LibRaw base |
+| `libde265.dll` | vcpkg | HEVC decoder |
+| `libx265.dll` | vcpkg | H.265 encoder |
+| `zlib1.dll` | vcpkg | Compression |
+| `jasper.dll` | vcpkg | JPEG-2000 support |
+| `jpeg62.dll` | vcpkg | JPEG codec |
+| `lcms2-2.dll` | vcpkg | Color management |
+| `turbojpeg.dll` | vcpkg | Fast JPEG |
+
+All DLLs are automatically copied to `build/Release/` during the build process.
+
+### Building for Electron
+
+```powershell
+# 1. Build native module for Node.js (MSVC)
+npm run build
+
+# 2. Rebuild for specific Electron version
+npx electron-rebuild -f -w nimage -v <electron-version>
+
+# Example for Electron 41.1.1:
+npx electron-rebuild -f -w nimage -v 41.1.1
+```
+
+### Using in Electron Renderer
+
+```javascript
+// stage.js - Renderer process
+const path = require('path');
+
+function initNImage(appBasePath) {
+    if (!window.electron_helper) return false;
+    
+    try {
+        const nImageBinPath = path.resolve(appBasePath, 'nImage/build/Release');
+        
+        // Add DLL folder to PATH before loading
+        process.env.PATH = nImageBinPath + ';' + (process.env.PATH || '');
+        
+        nImage = require('../nImage/lib/index.js');
+        return nImage?.isLoaded || false;
+    } catch (e) {
+        console.log('nImage unavailable:', e.message);
+        return false;
+    }
+}
+
+// Call during app startup
+const nImageReady = initNImage(g.basePath);
+```
+
+### Graceful Degradation
+
+Always check `nImage.isLoaded` before using native features. The JS wrapper provides:
+- `detectFormat()` - Pure JS format detection (always works)
+- `getSupportedFormats()` - Returns list of supported formats
+- Sharp pipeline fallback for standard formats
+
+### Distribution
+
+When packaging your Electron app:
+1. Include `nImage/build/Release/*.dll` (all 10 DLLs)
+2. Include `nImage/build/Release/nimage.node`
+3. Include `nImage/lib/index.js`
+
+The module will gracefully fail if DLLs are missing, logging which files are absent.

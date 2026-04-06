@@ -457,36 +457,65 @@ HTTP Request
 | libtiff | mingw-w64-x86_64-libtiff | TIFF encode/decode |
 | libaom | mingw-w64-x86_64-aom | AV1/AVIF encode |
 
-### Runtime Dependencies (in dist/)
+### Runtime Dependencies (MSVC Build)
 
-```
-dist/
-├── nimage.node              # Main module
-├── libraw-24.dll           # RAW decoding
-├── libheif.dll             # HEIC/HEIF decoding
-├── libMagickCore-7.Q16HDRI-10.dll  # ImageMagick core
-├── libjpeg-8.dll           # JPEG codec
-├── libpng16-16.dll         # PNG codec
-├── libwebp-7.dll           # WebP codec
-├── libtiff-6.dll           # TIFF codec
-├── libaom.dll              # AV1 codec
-├── libde265-0.dll          # HEVC decoder
-├── libx265.dll             # H.265 codec
-├── libx264.dll             # H.264 codec
-└── ... (100+ other DLLs)
-```
+**Note**: The `dist/` folder contains MinGW-compiled binaries that are **incompatible with Electron**. Use MSVC builds from `build/Release/` for Electron compatibility.
+
+#### Required DLLs (build/Release/)
+
+| DLL | Size | Purpose |
+|-----|------|---------|
+| `nimage.node` | ~250 KB | Main native module |
+| `heif.dll` | ~1.2 MB | HEIC/HEIF/AVIF decoding |
+| `raw_r.dll` | ~1.1 MB | LibRaw (RAW formats) |
+| `raw.dll` | ~1.1 MB | LibRaw base library |
+| `libde265.dll` | ~510 KB | HEVC decoder for HEIC |
+| `libx265.dll` | ~5.1 MB | H.265 encoder |
+| `zlib1.dll` | ~88 KB | Compression |
+| `jasper.dll` | ~306 KB | JPEG-2000 support |
+| `jpeg62.dll` | ~670 KB | JPEG codec |
+| `lcms2-2.dll` | ~367 KB | LittleCMS color management |
+| `turbojpeg.dll` | ~813 KB | Fast JPEG processing |
+
+**Total**: ~11 MB
+
+#### Electron Compatibility
+
+| Build Type | Node.js | Electron | Notes |
+|------------|---------|----------|-------|
+| MSVC (`build/Release/`) | ✅ Works | ✅ Works | Use this for both |
+| MinGW (`dist/`) | ✅ Works | ❌ Crashes | IAT bug - do not use |
+
+**The MinGW Crash**: MinGW-compiled NAPI addons have empty Import Address Tables for `napi_*` functions, causing instant 0xC0000005 Access Violation in Electron. Always use MSVC builds for Electron.
 
 ## Build System
 
-### Windows (MSYS2 + MinGW g++)
+### Windows (MSVC + vcpkg) - RECOMMENDED
+
+**Prerequisites**: Visual Studio 2022, vcpkg with libraw and libheif installed
 
 ```powershell
-# Full setup
+# Install vcpkg dependencies
+vcpkg install libraw:x64-windows libheif:x64-windows
+
+# Build for Node.js
+npm run build
+
+# Build for Electron (example: v41.1.1)
+npx electron-rebuild -f -w nimage -v 41.1.1
+```
+
+### Windows (MSYS2 + MinGW) - NOT FOR ELECTRON
+
+```powershell
+# Full setup (MinGW builds work for Node.js only)
 .\scripts\setup.ps1
 
 # Build
 npm run build
 ```
+
+**Warning**: MinGW-compiled binaries crash in Electron due to IAT (Import Address Table) corruption. Use MSVC builds for Electron apps.
 
 ### Linux
 

@@ -58,6 +58,7 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
     "node-gyp": "^12.2.0"
   }
 }

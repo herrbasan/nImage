@@ -80,7 +80,11 @@
                 "<(vcpkg_root)/installed/x64-windows/bin/raw.dll",
                 "<(vcpkg_root)/installed/x64-windows/bin/libde265.dll",
                 "<(vcpkg_root)/installed/x64-windows/bin/libx265.dll",
-                "<(vcpkg_root)/installed/x64-windows/bin/zlib1.dll"
+                "<(vcpkg_root)/installed/x64-windows/bin/zlib1.dll",
+                "<(vcpkg_root)/installed/x64-windows/bin/jasper.dll",
+                "<(vcpkg_root)/installed/x64-windows/bin/jpeg62.dll",
+                "<(vcpkg_root)/installed/x64-windows/bin/lcms2-2.dll",
+                "<(vcpkg_root)/installed/x64-windows/bin/turbojpeg.dll"
               ]
             }
           ]
