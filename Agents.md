@@ -110,25 +110,42 @@ npm run build
 
 ### Important: Recompiling After Native Code Changes
 
-**ALWAYS rebuild after modifying C++ source files** (`src/*.cpp`, `src/*.h`). The JS wrapper will load the existing binary silently - you won't see errors for missing symbols.
+**ALWAYS rebuild after modifying C++ source files** (`src/*.cpp`, `src/*.h`). The JS wrapper loads binaries in this order:
+1. `build/Release/nimage.node` (development)
+2. `prebuilds/nimage.node` (installed package)
+3. `dist/nimage.node` (distribution)
+
+**Recommended workflow for Electron apps:**
 
 ```powershell
-# After editing decoder.cpp, binding.cpp, etc.:
-npm run build                    # Rebuild for Node.js
+# 1. Clean old binaries (important!)
+rm build/Release/nimage.node
 
-# For Electron apps (like BlankTest):
+# 2. Rebuild for Electron
 npx electron-rebuild -f -w nimage -v <electron-version>
+# Example: npx electron-rebuild -f -w nimage -v 41.1.1
 
-# Example for Electron 41.1.1:
-npx electron-rebuild -f -w nimage -v 41.1.1
+# 3. Copy to dist (where Electron will find it)
+cp build/Release/nimage.node dist/
+cp build/Release/*.dll dist/    # Copy all runtime DLLs too
 ```
 
-**Verify the rebuild** by checking timestamps:
-```powershell
-ls build/Release/nimage.node    # Should show current time
+**Why delete build/Release first?**
+The JS wrapper tries `build/Release` before `dist`. If an old binary exists there, it will be loaded instead of your new one.
+
+**Verify the right binary is loaded:**
+```javascript
+// In your app, check which binary was loaded:
+const path = require('path');
+const fs = require('fs');
+const buildPath = path.join(__dirname, 'nImage/build/Release/nimage.node');
+const distPath = path.join(__dirname, 'nImage/dist/nimage.node');
+
+console.log('build/Release:', fs.existsSync(buildPath) ? fs.statSync(buildPath).mtime : 'not found');
+console.log('dist:', fs.statSync(distPath).mtime);
 ```
 
-**Common mistake**: Testing Electron with old Node.js binary → changes appear to not work.
+**Common mistake**: Forgetting to delete `build/Release/nimage.node` → old binary keeps loading.
 
 ## Development Phases (per dev plan)
 
