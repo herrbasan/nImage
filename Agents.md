@@ -214,6 +214,56 @@ encoder = new nImage.ImageEncoder('jpeg')
 encoder.encode(rgbBuffer, width, height, channels, options) → Buffer
 ```
 
+## Quality Settings and Demosaic Algorithms
+
+LibRaw supports multiple demosaic algorithms with different quality/speed tradeoffs. The `quality` option controls both the demosaic algorithm and processing parameters.
+
+### Quality Presets
+
+```javascript
+// Quality: 0 (Draft) - Linear interpolation, minimal processing
+nImage.decode(buffer, { format: 'cr2', quality: 0 });
+// Fastest option. Good for ultra-fast previews when combined with halfSize.
+
+// Quality: 1 (Fast) - PPG demosaic
+nImage.decode(buffer, { format: 'cr2', quality: 1 });
+// Balanced speed/quality. Good default for previews.
+
+// Quality: 2 (Balanced) - AHD demosaic  
+nImage.decode(buffer, { format: 'cr2', quality: 2 });
+// Higher quality demosaic. Best for half-size previews.
+
+// Quality: 3 (Best) - AHD with full processing
+nImage.decode(buffer, { format: 'cr2', quality: 3 });
+// Maximum quality with highlight reconstruction. For final export.
+```
+
+### Performance by Resolution
+
+**Full Resolution (3476×5208):**
+
+| Quality | Algorithm | Time | Speedup | Use Case |
+|---------|-----------|------|---------|----------|
+| 0 | Linear | 630 ms | **2.7×** | Fast full-res preview |
+| 1 | PPG | 707 ms | 2.4× | Balanced full-res |
+| 2 | AHD | 1693 ms | 1.0× | High quality full-res |
+| 3 | AHD+ | 1719 ms | baseline | Maximum quality export |
+
+**Half Resolution (1738×2604):**
+
+| Quality | Algorithm | Time | Notes |
+|---------|-----------|------|-------|
+| 0-2 | All | ~370 ms | Algorithm doesn't matter - LibRaw uses simple interpolation when half_size=1 |
+
+### Key Insight
+
+When `halfSize: true` is set, LibRaw automatically skips complex demosaic algorithms and uses simple interpolation. This is why all quality settings perform identically at half resolution.
+
+**Recommendation:**
+- **Fast previews**: Use `quality: 0` or `quality: 1` with `halfSize: true` (~370ms)
+- **Full-res draft**: Use `quality: 0` with `halfSize: false` for 2.7× speedup
+- **Final export**: Use `quality: 3` with `halfSize: false`
+
 ## Test Assets
 
 Available in `test/assets/`:

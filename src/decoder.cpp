@@ -222,13 +222,41 @@ bool LibRawDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output
     }
 
     // Configure processing options BEFORE dcraw_process()
-    // Fast mode: half_size = 1 gives 4x speedup (1/4 resolution)
-    if (options.halfSize) {
-        raw->imgdata.params.half_size = 1;
-        raw->imgdata.params.user_qual = 2;  // Fast demosaic (AHD=3, VNG=1, PPG=2)
-    } else {
-        raw->imgdata.params.half_size = 0;
-        raw->imgdata.params.user_qual = 3;  // High quality (AHD)
+    // Quality presets: 0=draft, 1=fast, 2=balanced, 3=best
+    // half_size flag: true = half resolution (4x faster), false = full resolution
+    int effectiveHalfSize = options.halfSize ? 1 : 0;
+    
+    switch (options.quality) {
+        case 0:  // Draft - linear demosaic, minimal processing
+            raw->imgdata.params.user_qual = 0;  // Linear interpolation (fastest)
+            raw->imgdata.params.half_size = effectiveHalfSize;
+            raw->imgdata.params.use_camera_wb = 0;  // Skip camera WB
+            raw->imgdata.params.highlight = 0;      // No highlight recovery
+            raw->imgdata.params.no_auto_bright = 1; // No auto brightness
+            break;
+            
+        case 1:  // Fast - PPG demosaic
+            raw->imgdata.params.user_qual = 2;  // PPG demosaic
+            raw->imgdata.params.half_size = effectiveHalfSize;
+            raw->imgdata.params.use_camera_wb = 1;
+            raw->imgdata.params.highlight = 0;
+            break;
+            
+        case 2:  // Balanced - AHD demosaic
+            raw->imgdata.params.user_qual = 3;  // AHD demosaic
+            raw->imgdata.params.half_size = effectiveHalfSize;
+            raw->imgdata.params.use_camera_wb = 1;
+            raw->imgdata.params.highlight = 1;  // Clip highlights
+            break;
+            
+        case 3:  // Best - maximum quality
+        default:
+            raw->imgdata.params.user_qual = 3;  // AHD demosaic
+            raw->imgdata.params.half_size = 0;  // Force full resolution
+            raw->imgdata.params.use_camera_wb = 1;
+            raw->imgdata.params.highlight = 2;  // Reconstruct highlights
+            raw->imgdata.params.no_auto_bright = 0;
+            break;
     }
     
     // Process with dcraw - this demosaics and converts to image
