@@ -312,9 +312,33 @@ The vcpkg-built libheif includes:
 | Typical speed | ~260ms for 12MP (vs ~50ms JPEG) |
 
 **Alternatives for faster HEIC:**
-1. Use thumbnails (5ms)
-2. Use metadata (0.2ms) + Sharp for scaling
+1. Use thumbnails (~5ms) - Native extraction, no Sharp needed
+2. Use metadata (0.2ms) - Just dimensions, no decode
 3. Build with FFmpeg backend (experimental, hardware decode)
+
+## Thumbnail Extraction API
+
+Native thumbnail extraction is available for RAW and HEIC formats without full decode:
+
+```javascript
+// Method 1: Native binding (fastest, no dependencies)
+const thumb = nativeBinding.thumbnail(buffer, { size: 512 });
+// Returns: { width, height, data: Buffer, format }
+
+// Method 2: Pipeline API (requires Sharp for resizing)
+const thumb = await nImage('photo.heic').thumbnail({ size: 512 });
+
+// Method 3: Standalone function (requires Sharp)
+const thumb = await nImage.thumbnail(buffer, { size: 512, format: 'heic' });
+```
+
+**Performance comparison** (12MP HEIC):
+| Method | Time | Output |
+|--------|------|--------|
+| `nativeBinding.thumbnail()` | ~5ms | 240×320 embedded |
+| `nativeBinding.decode()` | ~260ms | 3024×4032 full |
+
+**Note:** The `thumbnail()` standalone function requires Sharp. For fastest HEIC thumbnails without Sharp, use `nativeBinding.thumbnail()` directly.
 
 ## Test Assets
 
