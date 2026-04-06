@@ -108,6 +108,28 @@ sudo apt install libraw-dev libheif-dev libjpeg-dev libpng-dev libwebp-dev libti
 npm run build
 ```
 
+### Important: Recompiling After Native Code Changes
+
+**ALWAYS rebuild after modifying C++ source files** (`src/*.cpp`, `src/*.h`). The JS wrapper will load the existing binary silently - you won't see errors for missing symbols.
+
+```powershell
+# After editing decoder.cpp, binding.cpp, etc.:
+npm run build                    # Rebuild for Node.js
+
+# For Electron apps (like BlankTest):
+npx electron-rebuild -f -w nimage -v <electron-version>
+
+# Example for Electron 41.1.1:
+npx electron-rebuild -f -w nimage -v 41.1.1
+```
+
+**Verify the rebuild** by checking timestamps:
+```powershell
+ls build/Release/nimage.node    # Should show current time
+```
+
+**Common mistake**: Testing Electron with old Node.js binary → changes appear to not work.
+
 ## Development Phases (per dev plan)
 
 | Phase | Status | Description |
