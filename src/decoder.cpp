@@ -707,12 +707,42 @@ bool LibHeifDecoder::decodeHeif(ImageData& output, const DecodeOptions& options)
     // Check for alpha channel
     bool hasAlpha = heif_image_handle_has_alpha_channel(handle) != 0;
 
+    // Configure decoding options for performance
+    heif_decoding_options* decode_opts = heif_decoding_options_alloc();
+    if (decode_opts) {
+        // Quality presets affect HEIC decoding options
+        switch (options.quality) {
+            case 0:  // Draft - fastest
+                decode_opts->ignore_transformations = 1;  // Skip crop/rotation
+                decode_opts->strict_decoding = 0;         // Non-strict mode
+                decode_opts->num_codec_threads = 0;       // Use default threading
+                break;
+            case 1:  // Fast
+                decode_opts->ignore_transformations = 0;
+                decode_opts->strict_decoding = 0;
+                decode_opts->num_codec_threads = 0;
+                break;
+            case 2:  // Balanced
+            case 3:  // Best
+            default:
+                decode_opts->ignore_transformations = 0;
+                decode_opts->strict_decoding = 1;         // Strict validation
+                decode_opts->num_codec_threads = 0;
+                break;
+        }
+    }
+
     // Decode to RGB or RGBA
     heif_image* img = nullptr;
     enum heif_colorspace colorspace = heif_colorspace_RGB;
     enum heif_chroma chroma = hasAlpha ? heif_chroma_interleaved_RGBA : heif_chroma_interleaved_RGB;
 
-    err = heif_decode_image(handle, &img, colorspace, chroma, nullptr);
+    err = heif_decode_image(handle, &img, colorspace, chroma, decode_opts);
+    
+    if (decode_opts) {
+        heif_decoding_options_free(decode_opts);
+    }
+    
     if (err.code != heif_error_Ok) {
         error_ = std::string("Failed to decode HEIF: ") + err.message;
         return false;

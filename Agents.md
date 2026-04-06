@@ -264,6 +264,58 @@ When `halfSize: true` is set, LibRaw automatically skips complex demosaic algori
 - **Full-res draft**: Use `quality: 0` with `halfSize: false` for 2.7× speedup
 - **Final export**: Use `quality: 3` with `halfSize: false`
 
+## HEIC/HEIF Optimization
+
+The `quality` option also affects HEIC decoding through libheif:
+
+### Quality Impact on HEIC
+
+| Quality | Settings | Time | Speedup | Notes |
+|---------|----------|------|---------|-------|
+| 0 (Draft) | ignore_transformations, non-strict | 228 ms | **1.15×** | Skip crop/rotation, faster validation |
+| 3 (Best) | strict mode, apply transformations | 261 ms | baseline | Full validation and processing |
+
+### HEIC-Specific Optimizations
+
+**Draft mode (quality: 0) enables:**
+- `ignore_transformations` - Skips crop, rotation, mirroring (~5-10% faster)
+- `strict_decoding = false` - Relaxed validation
+- Default codec threading (libde265 multithreading)
+
+**Metadata extraction (much faster):**
+```javascript
+// Get dimensions without full decode - ~0.2ms vs ~260ms
+const decoder = new nImage.ImageDecoder('heic');
+const meta = decoder.getMetadata(buffer);
+// { width: 3024, height: 4032, ... }
+```
+
+**Thumbnail extraction:**
+```javascript
+// Extract embedded thumbnail - ~5ms vs ~260ms
+const thumb = await nImage.thumbnail(buffer, { size: 512, format: 'heic' });
+```
+
+### Build Configuration
+
+The vcpkg-built libheif includes:
+- ✅ `ENABLE_MULTITHREADING_SUPPORT=ON` - Multi-threading enabled
+- ✅ `ENABLE_PARALLEL_TILE_DECODING=ON` - Parallel tile decode
+- ⚠️ No hardware acceleration - libde265 is CPU-only
+
+### Why HEIC is Slower Than JPEG
+
+| Factor | Impact |
+|--------|--------|
+| H.265 codec | 5-10× more compute than JPEG |
+| libde265 | Software-only, no GPU/DXVA |
+| Typical speed | ~260ms for 12MP (vs ~50ms JPEG) |
+
+**Alternatives for faster HEIC:**
+1. Use thumbnails (5ms)
+2. Use metadata (0.2ms) + Sharp for scaling
+3. Build with FFmpeg backend (experimental, hardware decode)
+
 ## Test Assets
 
 Available in `test/assets/`:
