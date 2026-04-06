@@ -369,6 +369,23 @@ struct FormatDetection {
 };
 
 /**
+ * Decode options for controlling quality/speed tradeoffs
+ */
+struct DecodeOptions {
+    // For RAW formats: use half-size decode (4x faster, 1/4 resolution)
+    // LibRaw: sets half_size=1, user_qual=2 (fast demosaic)
+    bool halfSize = false;
+    
+    // Target maximum dimension (0 = no limit)
+    // Decoders may use embedded thumbnails if available and suitable
+    int maxDimension = 0;
+    
+    // Quality preset: 0=fast, 1=balanced, 2=best
+    // Currently only affects RAW demosaic algorithm
+    int quality = 1;
+};
+
+/**
  * Base class for image decoders
  */
 class ImageDecoder {
@@ -389,6 +406,9 @@ public:
 
     // Decode image to RGB/RGBA
     virtual bool decode(const uint8_t* buffer, size_t size, ImageData& output) = 0;
+    
+    // Decode with options ( RAW half-size, quality settings)
+    virtual bool decode(const uint8_t* buffer, size_t size, ImageData& output, const DecodeOptions& options) = 0;
 
     // Get metadata without full decode
     virtual bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) = 0;
@@ -425,6 +445,7 @@ public:
     ~LibRawDecoder() override;
 
     bool decode(const uint8_t* buffer, size_t size, ImageData& output) override;
+    bool decode(const uint8_t* buffer, size_t size, ImageData& output, const DecodeOptions& options) override;
     bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) override;
     bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) override;
     size_t stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) override;
@@ -439,6 +460,7 @@ private:
     void close();
 
     bool processRAW(ImageData& output);
+    bool processRAW(ImageData& output, const DecodeOptions& options);
     bool extractMetadata(ImageMetadata& metadata);
     void extractMetadataToImageData(ImageData& output);
 };
@@ -452,6 +474,7 @@ public:
     ~LibHeifDecoder() override;
 
     bool decode(const uint8_t* buffer, size_t size, ImageData& output) override;
+    bool decode(const uint8_t* buffer, size_t size, ImageData& output, const DecodeOptions& options) override;
     bool getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) override;
     bool getThumbnail(const uint8_t* buffer, size_t size, int maxSize, ImageData& output) override;
     size_t stream(const uint8_t* buffer, size_t size, int tileSize, std::vector<ImageData>& outputTiles) override;
@@ -467,6 +490,7 @@ private:
     void close();
 
     bool decodeHeif(ImageData& output);
+    bool decodeHeif(ImageData& output, const DecodeOptions& options);
     bool extractMetadata(ImageMetadata& metadata);
     void extractMetadataToImageData(ImageData& output);
 };

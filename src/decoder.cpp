@@ -194,6 +194,12 @@ void LibRawDecoder::close() {
 }
 
 bool LibRawDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output) {
+    // Default options (full quality)
+    DecodeOptions options;
+    return decode(buffer, size, output, options);
+}
+
+bool LibRawDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output, const DecodeOptions& options) {
     if (!buffer || size < 64) {
         error_ = "Buffer too small or null";
         return false;
@@ -215,6 +221,16 @@ bool LibRawDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output
         return false;
     }
 
+    // Configure processing options BEFORE dcraw_process()
+    // Fast mode: half_size = 1 gives 4x speedup (1/4 resolution)
+    if (options.halfSize) {
+        raw->imgdata.params.half_size = 1;
+        raw->imgdata.params.user_qual = 2;  // Fast demosaic (AHD=3, VNG=1, PPG=2)
+    } else {
+        raw->imgdata.params.half_size = 0;
+        raw->imgdata.params.user_qual = 3;  // High quality (AHD)
+    }
+    
     // Process with dcraw - this demosaics and converts to image
     ret = raw->dcraw_process();
     if (ret != 0) {
@@ -222,11 +238,16 @@ bool LibRawDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output
         return false;
     }
 
-    // Extract to output
-    return processRAW(output);
+    // Extract to output with options
+    return processRAW(output, options);
 }
 
 bool LibRawDecoder::processRAW(ImageData& output) {
+    DecodeOptions options;
+    return processRAW(output, options);
+}
+
+bool LibRawDecoder::processRAW(ImageData& output, const DecodeOptions& options) {
     LibRaw* raw = static_cast<LibRaw*>(libraw_data_);
 
     // Get the processed image data
@@ -262,6 +283,11 @@ bool LibRawDecoder::processRAW(ImageData& output) {
     );
     if (output.format == "unknown") {
         output.format = "raw";
+    }
+    
+    // Add quality indicator to format name for half-size
+    if (options.halfSize) {
+        output.format += "-half";
     }
 
     // Copy pixel data
@@ -618,6 +644,11 @@ void LibHeifDecoder::close() {
 }
 
 bool LibHeifDecoder::decodeHeif(ImageData& output) {
+    DecodeOptions options;
+    return decodeHeif(output, options);
+}
+
+bool LibHeifDecoder::decodeHeif(ImageData& output, const DecodeOptions& options) {
     if (!heif_context_) {
         error_ = "No HEIF context - call openBuffer first";
         return false;
@@ -759,11 +790,16 @@ bool LibHeifDecoder::extractMetadata(ImageMetadata& metadata) {
 }
 
 bool LibHeifDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output) {
+    DecodeOptions options;
+    return decode(buffer, size, output, options);
+}
+
+bool LibHeifDecoder::decode(const uint8_t* buffer, size_t size, ImageData& output, const DecodeOptions& options) {
     if (!openBuffer(buffer, size)) {
         return false;
     }
 
-    return decodeHeif(output);
+    return decodeHeif(output, options);
 }
 
 bool LibHeifDecoder::getMetadata(const uint8_t* buffer, size_t size, ImageMetadata& metadata) {

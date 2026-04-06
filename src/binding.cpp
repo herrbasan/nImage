@@ -341,6 +341,8 @@ static Napi::Value GetSupportedFormats(const Napi::CallbackInfo& info) {
 
 /**
  * Decode an image directly (convenience function)
+ * Arguments: buffer, [formatHint], [options]
+ * Options: { halfSize: boolean, quality: number }
  */
 static Napi::Value DecodeImage(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
@@ -350,11 +352,40 @@ static Napi::Value DecodeImage(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
-    // Optional format hint
+    // Parse arguments - can be: decode(buffer), decode(buffer, format), decode(buffer, format, options), decode(buffer, options)
     ImageFormat format = ImageFormat::UNKNOWN;
-    if (info.Length() >= 2 && info[1].IsString()) {
-        std::string formatStr = info[1].As<Napi::String>().Utf8Value();
-        format = ImageFormatUtil::formatFromString(formatStr);
+    DecodeOptions decodeOpts;
+    
+    if (info.Length() >= 2) {
+        if (info[1].IsString()) {
+            // decode(buffer, format, [options])
+            std::string formatStr = info[1].As<Napi::String>().Utf8Value();
+            format = ImageFormatUtil::formatFromString(formatStr);
+            
+            // Check for options as third arg
+            if (info.Length() >= 3 && info[2].IsObject()) {
+                Napi::Object options = info[2].As<Napi::Object>();
+                if (options.Has("halfSize") && options.Get("halfSize").IsBoolean()) {
+                    decodeOpts.halfSize = options.Get("halfSize").As<Napi::Boolean>().Value();
+                }
+                if (options.Has("quality") && options.Get("quality").IsNumber()) {
+                    decodeOpts.quality = options.Get("quality").As<Napi::Number>().Int32Value();
+                }
+            }
+        } else if (info[1].IsObject()) {
+            // decode(buffer, options)
+            Napi::Object options = info[1].As<Napi::Object>();
+            if (options.Has("halfSize") && options.Get("halfSize").IsBoolean()) {
+                decodeOpts.halfSize = options.Get("halfSize").As<Napi::Boolean>().Value();
+            }
+            if (options.Has("quality") && options.Get("quality").IsNumber()) {
+                decodeOpts.quality = options.Get("quality").As<Napi::Number>().Int32Value();
+            }
+            if (options.Has("format") && options.Get("format").IsString()) {
+                std::string formatStr = options.Get("format").As<Napi::String>().Utf8Value();
+                format = ImageFormatUtil::formatFromString(formatStr);
+            }
+        }
     }
 
     Napi::Buffer<uint8_t> inputBuffer = info[0].As<Napi::Buffer<uint8_t>>();
@@ -375,7 +406,7 @@ static Napi::Value DecodeImage(const Napi::CallbackInfo& info) {
     }
 
     ImageData output;
-    bool success = decoder->decode(data, size, output);
+    bool success = decoder->decode(data, size, output, decodeOpts);
 
     if (!success) {
         Napi::Error::New(env, "Decode failed: " + decoder->getError()).ThrowAsJavaScriptException();
