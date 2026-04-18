@@ -2,7 +2,7 @@
 
 **Last Updated**: 2026-04-04
 
-**Version**: 2.2.1 - Thumbnail extraction optimization
+**Version**: 2.2.1 - Quality presets, thumbnail extraction, capabilities endpoint
 
 ## Overview
 

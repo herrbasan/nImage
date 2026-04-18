@@ -1,0 +1,107 @@
+{
+  "version": { "major": 0, "minor": 1, "patch": 0 },
+  "decoders": {
+    "raw": {
+      "library": "libraw",
+      "formats": ["cr2", "crw", "nef", "nrw", "arw", "sr2", "orf", "raf", "rw2", "dng", "pef", "srw", "rwl", "mrw", "erf", "3fr", "k25", "kdc", "mef", "mos", "mraw", "rrf", "rwz"],
+      "features": ["halfSize", "qualityPresets", "thumbnails", "metadata", "streaming"],
+      "qualityLevels": [
+        { "level": 0, "name": "draft", "algorithm": "linear", "description": "Linear interpolation, minimal processing" },
+        { "level": 1, "name": "fast", "algorithm": "ppg", "description": "PPG demosaic, camera WB" },
+        { "level": 2, "name": "balanced", "algorithm": "ahd", "description": "AHD demosaic, camera WB, clip highlights" },
+        { "level": 3, "name": "best", "algorithm": "ahd+", "description": "AHD+ demosaic, full processing, highlight reconstruction" }
+      ]
+    },
+    "heic": {
+      "library": "libheif",
+      "formats": ["heic", "heif", "avif"],
+      "features": ["thumbnails", "metadata", "alphaChannel", "qualityPresets"],
+      "threading": true,
+      "parallelTileDecode": true,
+      "hardwareAcceleration": false,
+      "qualityLevels": [
+        { "level": 0, "name": "draft", "description": "ignore_transformations, non-strict validation" },
+        { "level": 1, "name": "fast", "description": "apply transformations, non-strict" },
+        { "level": 2, "name": "balanced", "description": "strict validation, apply transformations" },
+        { "level": 3, "name": "best", "description": "strict validation, apply transformations" }
+      ]
+    },
+    "sharp": {
+      "library": "sharp/libvips",
+      "formats": ["jpeg", "jpg", "png", "webp", "tiff", "tif", "gif", "bmp", "jxl", "jp2"],
+      "features": ["resize", "crop", "rotate", "flip", "flop", "grayscale", "negate", "normalize", "linear", "extend", "composite"]
+    },
+    "magick": {
+      "library": "imagemagick",
+      "formats": [
+        "psd", "psb", "pdf", "svg", "svgz", "ai", "eps", "xps",
+        "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+        "exr", "hdr", "bigtiff", "cin", "dpx", "fits", "flif", "j2k",
+        "miff", "mpc", "pcd", "pfm", "pict", "ppm", "psp", "sgi", "tga", "vtf",
+        "avi", "mov", "mp4", "m4v", "mpg", "mpeg", "wmv", "flv", "mkv", "mng", "jng", "mpo",
+        "bmp2", "bmp3", "dib", "dds", "djvu", "wmf", "emf", "cur", "ico",
+        "pcx", "dcx", "sun", "ras", "pbm", "pgm", "pnm", "xbm", "xpm", "xwd", "wbmp",
+        "gray", "graya", "cmyk", "cmyka", "rgb", "rgba", "rgb565", "rgba555",
+        "aai", "art", "blp", "brf", "cals", "caption", "clip", "dcm", "dot",
+        "fpx", "g3", "g4", "gradient", "hald", "histogram", "htm", "html",
+        "icb", "icc", "info", "inline", "ipl", "isobrl", "isobrl6",
+        "jbg", "jnx", "jpe", "jpm", "jps", "jpx", "kvec", "mac", "map",
+        "mat", "matte", "mono", "msl", "mtv", "mvg", "ora", "otb", "pal",
+        "palm", "pcds", "pdb", "pfa", "pfb", "picon", "pix", "pjpeg", "plasma",
+        "png8", "png24", "png32", "pocketmod", "ps", "ps2", "ps3", "ptif",
+        "pwp", "rgf", "rla", "rle", "rpm", "sfw", "shtml", "stream", "text",
+        "tile", "tim", "tm2", "ttc", "ttf", "txt", "ubrl", "ubrl6", "uil",
+        "uyvy", "vda", "viff", "vips", "wdp", "wpg", "x", "xc", "xcf", "xv",
+        "yuv", "yuva"
+      ],
+      "features": ["150+ formats"],
+      "note": "CLI fallback via magick.exe, slower than native decoders"
+    }
+  },
+  "encoders": {
+    "formats": ["jpeg", "png", "webp", "avif", "tiff"],
+    "library": "sharp/libvips"
+  },
+  "detection": {
+    "method": "magic-bytes",
+    "minBytes": 12,
+    "speed": "~0.5µs",
+    "signatures": {
+      "jpeg": { "bytes": "FFD8FF", "offset": 0, "confidence": 0.95 },
+      "png": { "bytes": "89504E47", "offset": 0, "confidence": 0.95 },
+      "heic": { "bytes": "ftyp box + heic brand", "offset": 4, "confidence": 0.95 },
+      "heif": { "bytes": "ftyp box + heif brand", "offset": 4, "confidence": 0.95 },
+      "avif": { "bytes": "ftyp box + avif brand", "offset": 4, "confidence": 0.95 },
+      "webp": { "bytes": "RIFF + WEBP", "offset": 0, "confidence": 0.95 },
+      "psd": { "bytes": "8BPS", "offset": 0, "confidence": 0.95 },
+      "pdf": { "bytes": "%PDF-", "offset": 0, "confidence": 0.95 },
+      "exr": { "bytes": "762F3101", "offset": 0, "confidence": 0.95 },
+      "hdr": { "bytes": "#?RADIANCE", "offset": 0, "confidence": 0.95 },
+      "gif": { "bytes": "GIF", "offset": 0, "confidence": 0.95 }
+    }
+  },
+  "performance": {
+    "formatDetection": "~0.5-0.6µs per call",
+    "rawDecode": {
+      "cr2_22mb": { "dimensions": "5208x3476", "time": "~520ms" },
+      "orf_9mb": { "dimensions": "3720x2800", "time": "~400ms" },
+      "heic_2mb": { "dimensions": "2316x3088", "time": "<100ms" }
+    },
+    "thumbnail": {
+      "raw": "~5-10ms",
+      "heic": "~5ms",
+      "standard": "~10-50ms"
+    }
+  },
+  "stats": {
+    "totalFormats": 212,
+    "rawFormats": 23,
+    "heicFormats": 3,
+    "standardFormats": 10,
+    "documentFormats": 13,
+    "scientificFormats": 20,
+    "videoStillFormats": 12,
+    "otherFormats": 131
+  },
+  "generatedAt": "2026-04-18T08:00:00.000Z"
+}

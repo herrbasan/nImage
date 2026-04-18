@@ -11,7 +11,7 @@ Native image codec for Node.js via NAPI — decode, transform, and encode images
 
 ## Status
 
-**Last Updated**: 2026-04-04
+**Last Updated**: 2026-04-18
 
 | Component | Status |
 |-----------|--------|
@@ -20,6 +20,10 @@ Native image codec for Node.js via NAPI — decode, transform, and encode images
 | LibHeifDecoder (HEIC) | ✅ Working |
 | MagickDecoder (150+ formats) | ✅ Working |
 | Sharp Pipeline | ✅ Working |
+| Quality Presets (0-3) | ✅ Working |
+| Thumbnail Extraction | ✅ Working |
+| Streaming / Tile Decode | ✅ Working |
+| Capabilities Endpoint | ✅ Working |
 | Pre-compiled Binaries | ✅ In dist/ |
 
 ### Benchmark Results
@@ -342,19 +346,27 @@ nImage/
 │   ├── decoder.cpp     # LibRawDecoder, LibHeifDecoder, MagickDecoder
 │   └── binding.cpp     # NAPI bindings
 ├── lib/
-│   └── index.js        # JavaScript entry point + Sharp wrapper
+│   ├── index.js        # JavaScript entry point + Sharp wrapper
+│   └── capabilities/   # Static capability data (JSON)
+├── documentation/      # Full API documentation
+│   ├── README.md       # Main API reference
+│   ├── CAPABILITIES.md # Capabilities endpoint guide
+│   ├── DECODING.md     # Decoding guide
+│   └── ELECTRON.md     # Electron integration guide
 ├── dist/               # Pre-compiled binaries (tracked in git)
-│   ├── nimage.node    # Native module
-│   └── *.dll          # 116 runtime DLLs
+│   ├── nimage.node     # Native module
+│   └── *.dll           # Runtime DLLs
+├── bin/                # Prebuilt Electron binaries
 ├── deps/               # Build dependencies (gitignored)
 ├── scripts/
 │   ├── setup.ps1       # Full setup script
-│   └── build.js        # Build script (direct g++)
+│   ├── build.js        # Build script (direct g++)
+│   └── generate-capabilities.js  # Regenerate capability JSON
 ├── test/
 │   ├── index.test.js   # Unit tests
 │   ├── benchmark.js    # Performance benchmarks
 │   └── assets/         # Test images
-├── docs/               # Documentation
+├── docs/               # Design docs
 │   ├── nImage_spec.md  # Architecture spec
 │   └── nImage_dev_plan.md # Development plan
 └── package.json
@@ -370,16 +382,19 @@ See [docs/nImage_dev_plan.md](docs/nImage_dev_plan.md) for full development plan
 - [x] LibHeifDecoder (HEIC/HEIF/AVIF)
 - [x] ImageMagick fallback (150+ formats)
 - [x] Sharp pipeline integration (transforms + encoding)
+- [x] Quality presets for RAW demosaic and HEIC decode
+- [x] Thumbnail extraction (fast, no full decode)
+- [x] Half-size decode option (4x faster)
+- [x] Streaming / tile-based decode
+- [x] Capabilities endpoint (`getCapabilities()`)
+- [x] Full API documentation (`documentation/`)
 
 ### Near-term
 - [ ] Multi-page PDF support
-- [ ] Document ingest utilities
 
 ### Future
 - [ ] LittleCMS ICC color management
-- [ ] Tile-based processing for large images
-- [ ] Thumbnail extraction
-- [ ] OCR integration
+- [ ] Tile-based processing for 100MP+ images
 
 **Note:** All encoding (JPEG, PNG, WebP, AVIF, TIFF) is handled by Sharp. No separate encoders needed.
 

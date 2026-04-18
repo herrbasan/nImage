@@ -16,6 +16,7 @@
     "rebuild": "node-gyp rebuild",
     "rebuild:electron": "npx @electron/rebuild -f -w nimage",
     "test": "node test/index.test.js",
+    "generate-capabilities": "node scripts/generate-capabilities.js",
     "package": "node scripts/package-binary.js",
     "prepublishOnly": "npm run build && npm run package"
   },
