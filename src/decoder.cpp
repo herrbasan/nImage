@@ -625,10 +625,12 @@ size_t LibRawDecoder::stream(const uint8_t* buffer, size_t size, int tileSize, s
 // ============================================================================
 
 LibHeifDecoder::LibHeifDecoder() : heif_context_(nullptr), heif_handle_(nullptr) {
+    heif_init(nullptr);
 }
 
 LibHeifDecoder::~LibHeifDecoder() {
     close();
+    heif_deinit();
 }
 
 bool LibHeifDecoder::openBuffer(const uint8_t* buffer, size_t size) {

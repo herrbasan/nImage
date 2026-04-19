@@ -1,6 +1,6 @@
 {
   "variables": {
-    "vcpkg_root": "C:/vcpkg"
+    "vcpkg_root": "<(module_root_dir)/vcpkg_installed"
   },
   "targets": [
     {
@@ -12,7 +12,7 @@
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")",
         "src",
-        "<(vcpkg_root)/installed/x64-windows/include"
+        "<(module_root_dir)/vcpkg_installed/x64-windows/include"
       ],
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
@@ -37,7 +37,7 @@
             "VCLinkerTool": {
               "DelayLoadDLLs": ["node.exe"],
               "AdditionalLibraryDirectories": [
-                "<(vcpkg_root)/installed/x64-windows/lib"
+                "<(module_root_dir)/vcpkg_installed/x64-windows/lib"
               ]
             }
           },
@@ -65,8 +65,8 @@
             }
           },
           "libraries": [
-            "-l<(vcpkg_root)/installed/x64-windows/lib/raw_r.lib",
-            "-l<(vcpkg_root)/installed/x64-windows/lib/heif.lib",
+            "-l<(module_root_dir)/vcpkg_installed/x64-windows/lib/raw_r.lib",
+            "-l<(module_root_dir)/vcpkg_installed/x64-windows/lib/heif.lib",
             "-luser32",
             "-lgdi32",
             "-lws2_32"
@@ -75,16 +75,17 @@
             {
               "destination": "<(module_root_dir)/build/Release",
               "files": [
-                "<(vcpkg_root)/installed/x64-windows/bin/heif.dll",
-                "<(vcpkg_root)/installed/x64-windows/bin/raw_r.dll",
-                "<(vcpkg_root)/installed/x64-windows/bin/raw.dll",
-                "<(vcpkg_root)/installed/x64-windows/bin/libde265.dll",
-                "<(vcpkg_root)/installed/x64-windows/bin/libx265.dll",
-                "<(vcpkg_root)/installed/x64-windows/bin/zlib1.dll",
-                "<(vcpkg_root)/installed/x64-windows/bin/jasper.dll",
-                "<(vcpkg_root)/installed/x64-windows/bin/jpeg62.dll",
-                "<(vcpkg_root)/installed/x64-windows/bin/lcms2-2.dll",
-                "<(vcpkg_root)/installed/x64-windows/bin/turbojpeg.dll"
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/aom.dll",
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/heif.dll",
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/raw_r.dll",
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/raw.dll",
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/libde265.dll",
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/libx265.dll",
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/zlib1.dll",
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/jasper.dll",
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/jpeg62.dll",
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/lcms2-2.dll",
+                "<(module_root_dir)/vcpkg_installed/x64-windows/bin/turbojpeg.dll"
               ]
             }
           ]
