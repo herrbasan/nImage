@@ -469,6 +469,7 @@ HTTP Request
 | `heif.dll` | ~1.2 MB | HEIC/HEIF/AVIF decoding |
 | `raw_r.dll` | ~1.1 MB | LibRaw (RAW formats) |
 | `raw.dll` | ~1.1 MB | LibRaw base library |
+| `aom.dll` | ~9.9 MB | AV1 codec for AVIF decoding |
 | `libde265.dll` | ~510 KB | HEVC decoder for HEIC |
 | `libx265.dll` | ~5.1 MB | H.265 encoder |
 | `zlib1.dll` | ~88 KB | Compression |

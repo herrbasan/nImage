@@ -393,6 +393,7 @@ The following runtime DLLs must be available for nImage to load:
 
 | DLL | Source | Purpose |
 |-----|--------|---------|
+| `aom.dll` | vcpkg | AV1 codec for AVIF decoding |
 | `heif.dll` | vcpkg | HEIC/HEIF decoding |
 | `raw_r.dll` | vcpkg | LibRaw (RAW formats) |
 | `raw.dll` | vcpkg | LibRaw base |
@@ -522,7 +523,7 @@ for (const sourcePath of sourcePaths) {
 // Copy DLLs on Windows
 if (process.platform === 'win32') {
     const dllSourceDir = path.join(__dirname, '..', 'nImage', 'build', 'Release');
-    const dllNames = ['heif.dll', 'raw_r.dll', /* ... */];
+    const dllNames = ['aom.dll', 'heif.dll', 'raw_r.dll', /* ... */];
     for (const dll of dllNames) {
         const src = path.join(dllSourceDir, dll);
         const dst = path.join(targetDir, dll);
@@ -571,7 +572,7 @@ Always check `nImage.isLoaded` before using native features. The JS wrapper prov
 ### Distribution
 
 When packaging your Electron app:
-1. Include `nImage/build/Release/*.dll` (all 10 DLLs)
+1. Include `nImage/build/Release/*.dll` (all 11 DLLs)
 2. Include `nImage/build/Release/nimage.node`
 3. Include `nImage/lib/index.js`
 

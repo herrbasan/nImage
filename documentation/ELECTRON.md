@@ -109,7 +109,7 @@ for (const sourcePath of sourcePaths) {
 
 if (process.platform === 'win32') {
     const dllSourceDir = path.join(__dirname, '..', 'nImage', 'build', 'Release');
-    const dllNames = ['heif.dll', 'raw_r.dll', 'raw.dll', 'libde265.dll', 'libx265.dll', 'zlib1.dll', 'jasper.dll', 'jpeg62.dll', 'lcms2-2.dll', 'turbojpeg.dll'];
+    const dllNames = ['aom.dll', 'heif.dll', 'raw_r.dll', 'raw.dll', 'libde265.dll', 'libx265.dll', 'zlib1.dll', 'jasper.dll', 'jpeg62.dll', 'lcms2-2.dll', 'turbojpeg.dll'];
     for (const dll of dllNames) {
         const src = path.join(dllSourceDir, dll);
         const dst = path.join(targetDir, dll);
@@ -189,6 +189,7 @@ The following DLLs must be available for nImage to load on Windows:
 
 | DLL | Source | Purpose |
 |-----|--------|---------|
+| `aom.dll` | vcpkg | AV1 codec for AVIF decoding |
 | `heif.dll` | vcpkg | HEIC/HEIF/AVIF decoding |
 | `raw_r.dll` | vcpkg | LibRaw (RAW formats) |
 | `raw.dll` | vcpkg | LibRaw base |
