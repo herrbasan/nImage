@@ -11,6 +11,7 @@
     "setup": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
     "setup:deps": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1 -SkipBuild",
     "build": "node-gyp rebuild",
+    "postbuild": "node scripts/copy-to-dist.js",
     "build:debug": "node-gyp rebuild --debug",
     "build:clean": "node-gyp clean",
     "rebuild": "node-gyp rebuild",
