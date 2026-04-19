@@ -29,7 +29,7 @@
     "sharp": {
       "library": "sharp/libvips",
       "formats": ["jpeg", "jpg", "png", "webp", "tiff", "tif", "gif", "bmp", "jxl", "jp2"],
-      "features": ["resize", "crop", "rotate", "flip", "flop", "grayscale", "negate", "normalize", "linear", "extend", "composite"]
+      "features": ["resize", "crop", "rotate", "flip", "flop", "grayscale", "blur", "negate", "normalize", "linear", "extend", "composite"]
     },
     "magick": {
       "library": "imagemagick",
